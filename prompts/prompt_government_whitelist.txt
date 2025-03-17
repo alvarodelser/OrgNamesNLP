@@ -1,0 +1,54 @@
+Return a structured text response containing a dictionary. Your output **must strictly** be a valid JSON dictionary without any additional text, explanation, or formatting.
+### Structure:
+The dictionary will strictly have the 27 following keys, each corresponds to a EU Member State in this equivalence:
+
+Q29: Spain
+Q45: Portugal
+Q142: France
+Q233: Malta
+Q41: Greece
+Q38: Italy
+Q183: Germany
+Q31: Belgium
+Q55: Netherlands
+Q34: Sweden
+Q33: Finland
+Q211: Latvia
+Q191: Estonia
+------------------------------------------
+Q37: Lithuania
+Q36: Poland
+Q28: Hungary
+Q218: Romania
+Q214: Slovakia
+Q213: Czech Republic
+Q215: Slovenia
+Q40: Austria
+Q219: Bulgaria
+Q224: Croatia
+Q229: Cyprus
+Q35: Denmark
+Q27: Ireland
+Q32: Luxembourg
+ 
+Each country code must be mapped to a **list of exactly five keywords** that commonly appear in local government names in that country. 
+
+### ** Government Whitelist**
+- These keywords will be used for **regular expression-based name matching** to identify local governments from **organization** names.
+- Keywords must specifically appear in local governments within the given country.
+- Consider all official and widely used languages of the country.
+- What words typically appear in local governments names in your country? 
+- Select terms that uniquely distinguish **local governments** from other **organizations**.
+ 
+ 
+### **Final Output Rules:**
+1. **Must be a valid JSON dictionary**—no extra text, explanations, or formatting.
+2. **Each country must have exactly five keywords** in its respective languages.
+3. **No additional commentary or metadata.** Return only the JSON object.
+
+### **Example Output (Format Only, Not Real Data):**
+For example your output will beg¡n: {'Q29':["keyword1", "keyword2", "keyword3", "keyword4","keyword5"], 'Q45':[...
+
+
+Ensure your response **strictly follows** this structure. No additional text or formatting is allowed. 
+
