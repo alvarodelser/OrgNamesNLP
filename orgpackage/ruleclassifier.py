@@ -7,49 +7,28 @@ from sklearn.feature_selection import SelectKBest, chi2
 from tqdm import tqdm
 import stopwordsiso as stopwords
 import os
+import shutil
 import pandas as pd
+from wikdict_compound import split_compound, make_db
 
-LANG_MODELS = {
-    'es': 'es_core_news_md',  # Spanish
-    'ca': 'ca_core_news_md',  # Catalan
-    'pt': 'pt_core_news_md',  # Portuguese
-    'fr': 'fr_core_news_md',  # French
-    'el': 'el_core_news_md',  # Greek
-    'it': 'it_core_news_md',  # Italian
-    'de': 'de_core_news_md',  # German
-    'nl': 'nl_core_news_md',  # Dutch
-    'sv': 'sv_core_news_md',  # Swedish
-    'fi': 'fi_core_news_md',  # Finnish
-    'lt': 'lt_core_news_md',  # Lithuanian
-    'pl': 'pl_core_news_md',  # Polish
-    'ro': 'ro_core_news_md',  # Romanian
-    'sl': 'sl_core_news_md',  # Slovenian
-    'da': 'da_core_news_sm',  # Danish
-    'hr': 'hr_core_news_md'   # Croatian
-}
+from config import SPACY_MODELS, COUNTRY_DICT
 
 
-
-def rule_classify(names, keywords): # Receives a dict of country lists of regex patterns and matches names against it
-    if keywords:
-        patterns = r"(" + r"|".join(keywords) + r")"
-        combined_pattern = re.compile(patterns, re.IGNORECASE)
-        result = [1 if combined_pattern.search(name) else 0 for name in names]
-        return result
-    else:
-        return [0] * len(names)
-
+######################################################### STD TOKENIZER ######################################################
 def normalize_stopwords(stopwords_list, vectorizer):
     """Applies vectorizer preprocessing (e.g., lowercasing, tokenization) to stopwords"""
     analyzer = vectorizer.build_analyzer()  # Get tokenizer from TfidfVectorizer
     return list(word for sw in stopwords_list for word in analyzer(sw))
 
+
+
+#################################################### SPACY TOKENIZER/LEMMATIZER ######################################################
 def custom_tokenizer(text, language_code):
     """
     Tokenizes and lemmatizes text based on the specified language using spaCy.
     """
-    if language_code in LANG_MODELS:
-        nlp = spacy.load(LANG_MODELS[language_code], disable=["ner"])
+    if language_code in SPACY_MODELS:
+        nlp = spacy.load(SPACY_MODELS[language_code], disable=["ner"])
     else:
         return None
 
@@ -61,8 +40,6 @@ def custom_tokenizer(text, language_code):
 
 
 def tokenize(df, save_path="./results/tokenized_names.csv"):
-    with open('./data/country_dictionary.json', 'r', encoding='utf-8') as f:
-        COUNTRIES_DICT = json.load(f)
     # Check if there's a partially saved file
     if os.path.exists(save_path):
         df_saved = pd.read_csv(save_path)
@@ -83,7 +60,7 @@ def tokenize(df, save_path="./results/tokenized_names.csv"):
             if isinstance(name, list):
                 name = name[0]
             country = row["country"]
-            language = COUNTRIES_DICT[country]['languages'][0]
+            language = COUNTRY_DICT[country]['languages'][0]
             tokens = custom_tokenizer(name, language)
             if tokens is None:
                 tokenized_name = name
@@ -102,6 +79,71 @@ def tokenize(df, save_path="./results/tokenized_names.csv"):
     return df_saved
 
 
+############################################################# DECOMPOSER ######################################################
+DB_PATH = "./data/wikdict_dbs/"
+
+
+def rebuild_wikdict_databases():
+    input_path = "./data/wikdict_dbs/input/"
+    output_path = "./data/wikdict_dbs/output"
+    languages = set()
+
+    # Load country dictionary and extract valid languages
+    valid_languages = {lang for data in COUNTRY_DICT.values() for lang in data.get("languages", [])}
+    detected_languages = {entry.split('.')[0] for entry in os.listdir(input_path)}
+
+    for lang in detected_languages & valid_languages:
+        print(lang)
+        make_db(lang, input_path, output_path)
+
+
+def decompose_names(df, save_path="./results/decomposed_names.csv"):
+    if os.path.exists(save_path):
+        df_saved = pd.read_csv(save_path)
+        processed_instances = set(df_saved["instance"])
+    else:
+        df_saved = pd.DataFrame(columns=["instance", "names", "decomposed"])
+        processed_instances = set()
+
+    df_to_process = df[~df["instance"].isin(processed_instances)]
+    for i in tqdm(range(len(df_to_process)), desc="Decomposing Names"):
+        try:
+            row = df_to_process.iloc[i]
+            instance_id = row["instance"]
+            name = row["names"]
+            if isinstance(name, list):
+                name = name[0]  # Handle lists by taking the first name
+
+            country = row["country"]
+            language = COUNTRY_DICT.get(country, {}).get('languages', [None])[0]
+
+            if language:
+                decomposition = []
+                for word in name.split(' '):
+                    solution = split_compound(db_path='data/wikdict_dbs/output', lang=language, compound=word)
+                    if solution:
+                        decomposition.append(" ".join([part.written_rep for part in solution.parts]))
+                    else:
+                        decomposition.append(word)
+                decomposed_name = " ".join(decomposition)
+            else:
+                decomposed_name = name  # Use original name if no language detected
+
+            df_saved.loc[len(df_saved)] = [instance_id, name, decomposed_name]
+        except Exception as e:
+            print(f"Error processing instance {instance_id}: {e}")
+            df_saved.loc[len(df_saved)] = [instance_id, name, name]  # Store original in case of error
+
+        # Save every 100 iterations
+        if (i + 1) % 100 == 0 or (i + 1) == len(df_to_process):
+            df_saved.to_csv(save_path, index=False)
+
+    print("Decomposition complete!")
+    return df_saved
+
+
+
+########################################################### RULE ALGORITHMS ######################################################
 def word_counter_algorithm(names, labels, n=10):
     if sum(labels) == 0:
         print('NO DATA')
@@ -155,9 +197,8 @@ def country_word_generator(names, countries, labels, method, tokenize = False, n
         tokens_df = pd.read_csv('./data/tokenized_names.csv')
         df = df.merge(tokens_df[['instance', 'tokenized']], on='instance', how='left')
 
-    with open('./data/country_dictionary.json', 'r', encoding='utf-8') as f:
-        countries_dict = json.load(f)
-    for country in countries_dict.keys():
+
+    for country in COUNTRY_DICT.keys():
         df_country = df[df['country'] == country]
         if tokenize:
             names = df_country['tokenized']
@@ -169,10 +210,21 @@ def country_word_generator(names, countries, labels, method, tokenize = False, n
             country_keywrds = word_counter_algorithm(names, labels, n=ntokens)
         elif method == 'idf_best':
             country_stpwrds = []
-            languages = countries_dict[country]['languages']
+            languages = COUNTRY_DICT[country]['languages']
             for language in languages:
                 if stopwords.has_lang(language):
                     country_stpwrds.extend(stopwords.stopwords(language))
             country_keywrds = select_k_best_words(names, country_stpwrds, labels, n=ntokens)
         all_keywrds[country] = country_keywrds
     return all_keywrds
+
+
+############################################################# CLASSIFIER ######################################################
+def rule_classify(names, keywords): # Receives a dict of country lists of regex patterns and matches names against it
+    if keywords:
+        patterns = r"(" + r"|".join(keywords) + r")"
+        combined_pattern = re.compile(patterns, re.IGNORECASE)
+        result = [1 if combined_pattern.search(name) else 0 for name in names]
+        return result
+    else:
+        return [0] * len(names)

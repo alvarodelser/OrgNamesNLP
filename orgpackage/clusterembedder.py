@@ -1,3 +1,7 @@
+import json
+from pathlib import Path
+import re
+
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
@@ -5,7 +9,37 @@ from torch import Tensor
 import os
 import pandas as pd
 from transformers import AutoTokenizer, AutoModel
+
+import fasttext
+import fasttext.util
+
 import gc
+
+from orgpackage.config import EMB_MODELS
+
+
+def get_all_languages():
+    project_root = Path(__file__).resolve().parent.parent
+    file_path = project_root / "data/country_dictionary.json"
+    with open(file_path, 'r', encoding='utf-8') as f:
+        COUNTRIES_DICT = json.load(f)
+    ls = set()
+    for country in COUNTRIES_DICT:
+        language = COUNTRIES_DICT.get(country, {}).get('languages', [None])[0]
+        ls.add(language)
+    return ls
+
+def get_downloaded_languages():
+    project_root = Path(__file__).resolve().parent.parent
+    dir_path = project_root / "fasttext_models"
+    pattern = re.compile(r"cc\.(\w{2,3})\.300\.bin")
+    dls = set()
+    for filename in os.listdir(dir_path):
+        match = pattern.match(filename)
+        if match:
+            dls.add(match.group(1))
+    return dls
+
 
 def last_token_pool(last_hidden_states: Tensor,
                  attention_mask: Tensor) -> Tensor:
@@ -21,29 +55,73 @@ def get_detailed_instruct(task_description: str, query: str) -> str:
     return f'Instruct: {task_description}\nQuery: {query}'
 
 
+def fasttext_mean_embedding(model, text):
+    words = text.split()
+    word_vectors = [model.get_word_vector(word) for word in words if word in model]
+    if not word_vectors:
+        return [0] * model.get_dimension()  # Return zero vector if no valid words
+    return list(sum(word_vectors) / len(word_vectors))  # Compute mean embedding
 
 
-def compute_similarity(embeddings, class_embeddings):
-    return (embeddings @ class_embeddings.T) * 100
-
-
-def embedder(df, save_path="./results/embeddings.csv"):
-    models_map = {
-        'multilingual-e5': {'model_name': 'intfloat/multilingual-e5-large-instruct', 'max_length': 512, 'batch_size': 512},
-        'qwen': {'model_name': 'Alibaba-NLP/gte-Qwen2-7B-instruct', 'max_length': 8192, 'batch_size': 32},
-        'mistral': {'model_name': 'Linq-AI-Research/Linq-Embed-Mistral', 'max_length': 4096, 'batch_size': 256},
-        'e5-small': {'model_name': 'intfloat/e5-small-v2', 'max_length': 512, 'batch_size': 1024},
-    }
+def embedder(df, model_key):
+    save_path = f"./results/embeddings/{model_key}_embeddings.csv"
+    embedding_column = model_key + '_embedding'
     if os.path.exists(save_path):
         df_saved = pd.read_csv(save_path)
     else:
         df_saved = df.copy()
 
-    for model_key in models_map.keys():
-        model_name = models_map[model_key]['model_name']
-        max_length = models_map[model_key]['max_length']
-        batch_size = models_map[model_key]['batch_size']
-        embedding_column = model_key + '_embedding'
+    # FAST TEXT MEAN WORD EMBEDDING - I NEED TO SPLIT INTO LANGUAGES AGAIN
+    if model_key == 'fasttext':
+        with open('./data/country_dictionary.json', 'r', encoding='utf-8') as f:
+            COUNTRIES_DICT = json.load(f)
+
+        if os.path.exists(save_path):
+            df_saved = pd.read_csv(save_path)
+            processed_instances = set(df_saved["instance"])
+        else:
+            df_saved = pd.DataFrame(columns=["instance", "language", "names", embedding_column])
+            processed_instances = set()
+
+        df['language'] = df['country'].apply(lambda x: COUNTRIES_DICT[x]['languages'][0])
+        print(df)
+        df_to_process = df[~df["instance"].isin(processed_instances)]
+        ls = df_to_process["language"].unique().tolist()
+        dls = get_downloaded_languages()
+        print(f'languages to review: {dls}')
+
+        for lang in ls:
+            if lang not in dls:
+                # Skip if you do not have the model downloaded yet
+                print(f"Model not found for language '{lang}' – skipping for now.")
+                continue
+            lang_df = df_to_process[df_to_process["language"] == lang]
+            model_path = f'./fasttext_models/cc.{lang}.300.bin'
+            print(f"Loading model: {model_path}")
+            ft_model = fasttext.load_model(model_path)
+            for i, row in tqdm(lang_df.iterrows(), total=len(lang_df), desc=f"Embedding lang={lang}"):
+                instance_id = row["instance"]
+                language = row["language"]
+                name = row["names"]
+                if isinstance(name, list):
+                    name = name[0]
+
+                # Compute the embedding
+                try:
+                    embedding = fasttext_mean_embedding(ft_model, str(name))
+                except Exception as e:
+                    print(f"Error processing instance {instance_id}: {e}")
+                    embedding = None
+                df_saved.loc[len(df_saved)] = [instance_id, name, embedding]
+                processed_instances.add(instance_id)
+            df_saved.to_csv(save_path, index=False)
+            del ft_model
+            gc.collect()
+    else:
+        # ENCODER-BASED EMBEDDINGS
+        model_name = EMB_MODELS[model_key]['model_name']
+        max_length = EMB_MODELS[model_key]['max_length']
+        batch_size = EMB_MODELS[model_key]['batch_size']
 
         if embedding_column not in df_saved.columns:
             df_saved[embedding_column] = [None] * len(df_saved)
@@ -51,7 +129,7 @@ def embedder(df, save_path="./results/embeddings.csv"):
         start_idx = mask.idxmax() if mask.any() else len(df_saved)
         if start_idx >= len(df_saved):
             print(f"All embeddings for {model_key} already exist.")
-            continue
+            return
 
         print(f"Loading model: {model_key}")
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
@@ -76,7 +154,7 @@ def embedder(df, save_path="./results/embeddings.csv"):
 
 
             #Save every 50 batches
-            if save_path and (i - start_idx) // batch_size % 50 == 0:
+            if save_path and (i - start_idx) // batch_size % 10 == 0:
                 df_saved.to_csv(save_path, index=False)
 
         df_saved.to_csv(save_path, index=False)
@@ -87,4 +165,3 @@ def embedder(df, save_path="./results/embeddings.csv"):
         del tokenizer
         torch.mps.empty_cache()  # Free MPS memory
         gc.collect()
-    return df_saved

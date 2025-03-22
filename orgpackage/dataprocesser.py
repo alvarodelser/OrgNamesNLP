@@ -12,6 +12,8 @@ from collections import defaultdict
 from collections import Counter
 import ast
 
+from orgpackage.config import COUNTRY_DICT
+
 TIMEOUT = 15
 
 
@@ -42,9 +44,7 @@ def clean_errors(raw_data): #Aux function to clean wikidata return when error in
         return None
 
 def raw_wikidata_instance_query(country_id, class_id, offset=0): #Queries wikidata for all instances of subclasses of organizations per country and stores clean raw result in jsons
-    with open('./data/country_dictionary.json', 'r', encoding='utf-8') as f:
-        COUNTRIES_DICT = json.load(f)
-    print("Querying data from " + COUNTRIES_DICT[country_id]["country"])
+    print("Querying data from " + COUNTRY_DICT[country_id]["country"])
     instance_query = f"""
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX wikibase: <http://wikiba.se/ontology#>
@@ -89,9 +89,7 @@ def raw_wikidata_instance_query(country_id, class_id, offset=0): #Queries wikida
                 file.write(clean_result)
 
 def extract_wikidata_instances(class_id = 'Q43229'): # Queries wikidata based on lines already downloaded. Iterative process.
-    with open('./data/country_dictionary.json', 'r', encoding='utf-8') as f:
-        COUNTRIES_DICT = json.load(f)
-    for country_id in COUNTRIES_DICT.keys():
+    for country_id in COUNTRY_DICT.keys():
         if not os.path.exists("./data/raw/"+class_id+"/instances_" + country_id + ".json"):
             os.makedirs("./data/raw/"+class_id+"/", exist_ok=True)
             raw_wikidata_instance_query(country_id, class_id)
@@ -143,10 +141,8 @@ def plot_data_volume(dfs, labels=None):
 
 
     # Map country codes to names and flags
-    with open('./data/country_dictionary.json', 'r', encoding='utf-8') as f:
-        COUNTRIES_DICT = json.load(f)
-    country_flags = {key: value["flag"].lower() for key, value in COUNTRIES_DICT.items()}
-    country_names = {key: value["country"] for key, value in COUNTRIES_DICT.items()}
+    country_flags = {key: value["flag"].lower() for key, value in COUNTRY_DICT.items()}
+    country_names = {key: value["country"] for key, value in COUNTRY_DICT.items()}
 
     fig, ax = plt.subplots(figsize=(10, 10))
 
@@ -230,9 +226,7 @@ def most_common_classes(df):
 
 def sample_instances(instance_query_df, sample_size = 25000): #Samples df per country
     countries_dfs = []
-    with open('./data/country_dictionary.json', 'r', encoding='utf-8') as f:
-        COUNTRIES_DICT = json.load(f)
-    for country in COUNTRIES_DICT.keys():
+    for country in COUNTRY_DICT.keys():
         country_df = instance_query_df[instance_query_df["country"] == country]
         if len(country_df) > sample_size:
             country_df = country_df.sample(n=sample_size, random_state=42)
@@ -257,18 +251,16 @@ def extract_wikidata_classes(class_file, english_label = False): #In batches, qu
     class_ids_dict = {}  # Dictionary to store class IDs
     batch_size = 200  # Define batch size
 
-    with open('./data/country_dictionary.json', 'r', encoding='utf-8') as f:
-        COUNTRIES_DICT = json.load(f)
-    for country in COUNTRIES_DICT.keys():
+    for country in COUNTRY_DICT.keys():
         country_df = unprocessed_df[unprocessed_df["country"] == country]
         country_instances = ["wd:" + row["instance"].split("/")[-1] for _, row in country_df.iterrows()]
         print(len(country_instances))
-        languages = COUNTRIES_DICT[country]["languages"]
+        languages = COUNTRY_DICT[country]["languages"]
         languages_str = ', '.join([f'"{lang}"' for lang in languages])  # Format languages properly
 
         # Process instances in batches
         for i in tqdm(range(0, len(country_instances), batch_size),
-                      desc=f"Processing {COUNTRIES_DICT[country]['country']}"):
+                      desc=f"Processing {COUNTRY_DICT[country]['country']}"):
             instances_str = " ".join(country_instances[i:i + batch_size])
             if english_label:
                 class_query = f"""
@@ -358,8 +350,10 @@ def consolidate_hierarchy(df):
     prominent_classes_df = prominent_classes_df.sort_values(by="count", ascending=False).reset_index(drop=True)
     print(prominent_classes_df)
 
-def load_dataset(filename):
-    df = pd.read_csv(filename)
+def load_dataset(datafile = './data/wikidata_enriched_dataset.csv', tokenfile = './results/tokenized_names.csv'):
+    df = pd.read_csv(datafile)
+    tokens =  pd.read_csv(tokenfile)
+    df = df.merge(tokens[['instance', 'tokenized']], on='instance', how='left')
     df['class_ids'] = df['class_ids'].apply(ast.literal_eval)
     df['classes'] = df['classes'].apply(ast.literal_eval)
     return df
@@ -370,16 +364,14 @@ def enricher():
     class_labels = ['hospital', 'university_hospital', 'local_government', 'primary_school', 'secondary_school']
 
     # Step 1.5: Sample dynamically per country according to the number of positive instances of each domain, summed.
-    with open('./data/country_dictionary.json', 'r', encoding='utf-8') as f:
-        COUNTRIES_DICT = json.load(f)
-    cutoffs = {country: 0 for country in COUNTRIES_DICT}
+    cutoffs = {country: 0 for country in COUNTRY_DICT}
     for label in class_labels:
         if label != 'university_hospital': # All u_hospitals are hospitals so they are accounted for
-            for country in COUNTRIES_DICT.keys():
+            for country in COUNTRY_DICT.keys():
                 file_path = os.path.join('data', f'wikidata_{label}_dataset.csv')
                 if os.path.exists(file_path):
                     aux_df = load_dataset(file_path)
-                    aux_df = aux_df[aux_df['country'].isin(COUNTRIES_DICT.keys())]
+                    aux_df = aux_df[aux_df['country'].isin(COUNTRY_DICT.keys())]
                 cutoffs[country] += min(aux_df[aux_df['country']==country].shape[0], 5000)
     cutoffs = {country: cutoff * 2 for country, cutoff in cutoffs.items()} # Twice the sample to ensure at least the same amount of negative instances.
 
@@ -394,7 +386,7 @@ def enricher():
         file_path = os.path.join('data', f'wikidata_{label}_dataset.csv')
         if os.path.exists(file_path):
             aux_df = load_dataset(file_path)
-            aux_df = aux_df[aux_df['country'].isin(COUNTRIES_DICT.keys())]
+            aux_df = aux_df[aux_df['country'].isin(COUNTRY_DICT.keys())]
 
             # Step 3: If auxiliary dataset for a country has more than 5000 samples, downsample to 5000
             def sample_per_country(group, threshold):
