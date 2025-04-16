@@ -1,13 +1,16 @@
 import ast
 import gc
-
+import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, recall_score, f1_score
+from sklearn.metrics.pairwise import cosine_similarity
 from transformers import pipeline
 
 from orgpackage.config import DOMAIN_CLASSES_CORR, NLI_MODELS
+from orgpackage.orchestrator import load_experiments
 from orgpackage.ruleclassifier import  rule_classify
 from orgpackage.nliclassifier import avg_accuracy_score, llm_classify
+
 
 ############################################################# RULES ######################################################
 def evaluate_rule_experiment(exp, test):
@@ -15,7 +18,7 @@ def evaluate_rule_experiment(exp, test):
     pred_columns = []
     for cls in classes:
         keywords = exp['Parameters']['keywords']['whitelist_' + cls]
-        tokenize = exp['Parameters']['tokenize']
+        preprocessing = exp['Parameters']['preprocessing']
 
         col_name = exp['ID'] + '_' + cls
         pred_columns.append(col_name)
@@ -29,10 +32,12 @@ def evaluate_rule_experiment(exp, test):
                 test_country = test_country[test_country['hospital'] == 1]
 
             rules = keywords.get(country, [])
-            if tokenize:
+            if preprocessing == 'None':
                 names = test_country['names']
-            else:
+            elif preprocessing == 'Spacy tokenization':
                 names = test_country['tokenized']
+            else:
+                names = test_country['decomposed']
 
             classified_results = rule_classify(names, rules)  # Get classification results
             test.loc[test_country.index, col_name] = classified_results
@@ -68,8 +73,7 @@ def evaluate_rule_experiment(exp, test):
 
 def evaluate_rules(tests):
     experiments_path = './results/experiments.csv'
-    experiments = pd.read_csv(experiments_path)
-    experiments['Parameters'] = experiments['Parameters'].apply(ast.literal_eval)
+    experiments = load_experiments(experiments_path)
     for index, exp in experiments.iterrows():
         if exp['Technique'] == 'rules':
             exp = evaluate_rule_experiment(exp, tests[exp['Domain']])  # Modifies the original DataFrame
@@ -107,8 +111,7 @@ def evaluate_nli_experiment(exp, test, classifier, prompt): # Evaluates one mode
 
 def evaluate_nli(tests): # Evaluates per model of experiments
     experiments_path = './results/experiments.csv'
-    experiments = pd.read_csv(experiments_path)
-    experiments['Parameters'] = experiments['Parameters'].apply(ast.literal_eval)
+    experiments = load_experiments(experiments_path)
 
     for index, exp in experiments.iterrows():
         if exp['Technique'] == 'nli' and pd.isna(exp['Accuracy']):
@@ -131,58 +134,78 @@ def evaluate_nli(tests): # Evaluates per model of experiments
 
 
 ############################################################# EMBEDDIGS ######################################################
+def evaluate_cosine_experiment(exp, test):
+    distance = exp['Parameters']['distance']
+    threshold = 1 - distance  # cosine similarity threshold
+    prototypes = exp['Parameters']['prototypes']
+    model = exp['Parameters']['model']
+    embedding_col = model + '_embedding'
+    domain = exp['Domain']
+    structure = exp['Parameters']['structure']
+    is_multiclass = (structure == '2-multiclass')
+    classes = DOMAIN_CLASSES_CORR[domain]
+
+    print(f"{domain}_{model}")
+
+    pred_columns = [f"{exp['ID']}_{cls}" for cls in classes]
+
+    for col in pred_columns:
+        test[col] = 0  # Initialize predictions
+
+    for idx, row in test.iterrows():
+        x = row[embedding_col]
+        if isinstance(x, str):
+            x = np.array(eval(x))
+
+        similarities = {}
+
+        for cls in classes:
+            proto = prototypes.get(cls)
+            best_sim = -1
+
+            if isinstance(proto, dict):  # few-shot: multiple country prototypes
+                for p in proto.values():
+                    if isinstance(p, str):
+                        p = np.array(eval(p))
+                    sim = cosine_similarity([x], [p])[0][0]
+                    best_sim = max(best_sim, sim)
+            elif proto is not None:
+                if isinstance(proto, str):
+                    proto = np.array(eval(proto))
+                best_sim = cosine_similarity([x], [proto])[0][0]
+
+            similarities[cls] = best_sim
+
+        if is_multiclass:
+            for cls in classes:
+                if similarities[cls] >= threshold:
+                    test.at[idx, f"{exp['ID']}_{cls}"] = 1
+        else:
+            # Multiclass: choose the closest class (max sim), if over threshold
+            best_cls = max(similarities, key=similarities.get)
+            if similarities[best_cls] >= threshold:
+                test.at[idx, f"{exp['ID']}_{best_cls}"] = 1  # One-hot
+
+    y_true = test[classes]
+    y_pred = test[pred_columns]
+
+    if is_multiclass:
+        exp['Accuracy'] = accuracy_score(y_true, y_pred)
+    else:
+        exp['Accuracy'] = avg_accuracy_score(y_true, y_pred)  # Custom function or define separately
+
+    exp['Recall'] = recall_score(y_true, y_pred, average='macro')
+    exp['F1'] = f1_score(y_true, y_pred, average='macro')
+
+    return exp
+
+
 def evaluate_embeddings(tests):
-    experiments_path = './results/experiments_embeddings.csv'
-    experiments = pd.read_csv(experiments_path)
-    experiments['Parameters'] = experiments['Parameters'].apply(ast.literal_eval)
-
+    file_path = './results/experiments.csv'
+    experiments = load_experiments(file_path)
     for index, exp in experiments.iterrows():
-        if exp['Technique'] == 'vector' and exp['Method'] == 'similarity' and pd.isna(exp['Accuracy']):
+        if exp['Technique'] == 'vector' and exp['Method'] == 'similarity':
             domain = exp['Domain']
-            classes = DOMAIN_CLASSES_CORR[domain]
-            model_key = exp['Parameters']['model']
-
-
-            test_path = "./results/similarities/" + exp['Domain'] + "_" + model_key + ".csv"
-
-            # Load from available embedings
-            # test_embeddings = generate_embeddings(tests[domain], tokenizer, model, max_length)
-            # column_name = exp['ID']
-            # class_embeddings = generate_embeddings(classes, tokenizer, model, max_length)
-            # for idx, cls in enumerate(classes):
-            #     cls_embedding = class_embeddings[idx]
-            #similarity_matrix = embeddings @ class_embeddings.T
-            #     tests[domain][column_name + '_' + cls] = compute_similarity(test_embeddings, cls_embedding)
-            # tests[domain][column_name + '_embeddings'] = test_embeddings.tolist()
-            #
-            #
-            # tests[domain].to_csv(test_path, index=False)
-            experiments.loc[index] = exp
-            experiments.to_csv(experiments_path, index=False)  # SAVING PER MODEL
-            #
-            # # Free memory
-            # del tokenizer
-            # del model
-            # gc.collect()  # Run garbage collection
-            #
-            #
-            # model_name = exp['Parameters']['model']
-            # embed_and_save(exp, tests, model_name)
-            #
-            # experiments.at[index, 'Processed'] = True
-            # experiments.to_csv(experiments_path, index=False)
-            #
-            # gc.collect()
-
-#
-# def clustering_vectorizer():
-#     FAST TEXT
-#     EMBEDDING MODELS = ()
-#     SENTENCE EMBEDDINGS MODELS = ()
-#
-# def clustering_classifier():
-#     DBSCAN
-#     HIERARCHICAL
-#     CLOSEST LABELS
-#     LABEL ASSIGNMENT
-#
+            experiments.loc[index] = evaluate_cosine_experiment(exp, tests[domain])
+    experiments.to_csv(file_path, index=False)
+        

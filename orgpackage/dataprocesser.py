@@ -12,6 +12,7 @@ from collections import defaultdict
 from collections import Counter
 import ast
 
+from orgpackage.aux import load_dataset
 from orgpackage.config import COUNTRY_DICT
 
 TIMEOUT = 15
@@ -350,13 +351,6 @@ def consolidate_hierarchy(df):
     prominent_classes_df = prominent_classes_df.sort_values(by="count", ascending=False).reset_index(drop=True)
     print(prominent_classes_df)
 
-def load_dataset(datafile = './data/wikidata_enriched_dataset.csv', tokenfile = './results/tokenized_names.csv'):
-    df = pd.read_csv(datafile)
-    tokens =  pd.read_csv(tokenfile)
-    df = df.merge(tokens[['instance', 'tokenized']], on='instance', how='left')
-    df['class_ids'] = df['class_ids'].apply(ast.literal_eval)
-    df['classes'] = df['classes'].apply(ast.literal_eval)
-    return df
 
 def enricher():
     # Step 1: Read the main dataset

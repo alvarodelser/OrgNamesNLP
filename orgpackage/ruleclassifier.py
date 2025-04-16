@@ -1,17 +1,15 @@
 import re
 from collections import Counter
-import json
 import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_selection import SelectKBest, chi2
 from tqdm import tqdm
 import stopwordsiso as stopwords
 import os
-import shutil
 import pandas as pd
 from wikdict_compound import split_compound, make_db
 
-from config import SPACY_MODELS, COUNTRY_DICT
+from orgpackage.config import SPACY_MODELS, COUNTRY_DICT
 
 
 ######################################################### STD TOKENIZER ######################################################
@@ -146,13 +144,13 @@ def decompose_names(df, save_path="./results/decomposed_names.csv"):
 ########################################################### RULE ALGORITHMS ######################################################
 def word_counter_algorithm(names, labels, n=10):
     if sum(labels) == 0:
-        print('NO DATA')
+        #print('NO DATA')
         return []
     keyword_counts = Counter()
 
     # Update keyword counts based on labels
-    for name, label in tqdm(zip(names, labels), total=len(names), desc="Processing names"):
-        tokens = re.findall(r'\w+', name.lower())  # Lowercase for case insensitive matching
+    for name, label in zip(names, labels):
+        tokens = re.findall(r'\w+', str(name).lower())  # Lowercase for case insensitive matching
         # Counts
         if label:
             keyword_counts.update(tokens)
@@ -165,7 +163,7 @@ def word_counter_algorithm(names, labels, n=10):
 
 def select_k_best_words(names, stpwrds, labels, n = 10):
     if sum(labels) == 0:
-        print('NO DATA')
+        #print('NO DATA')
         return []
     try:
         #Step 0: Initialize Vectorizer with no stopwords to preprocess simmilarly my stopword list
@@ -188,22 +186,14 @@ def select_k_best_words(names, stpwrds, labels, n = 10):
         return []
 
 
-def country_word_generator(names, countries, labels, method, tokenize = False, ntokens=5):
+def country_word_generator(names, countries, labels, method, ntokens=5):
     all_keywrds = {}
 
     df = pd.concat([names, countries, labels], axis=1)
     df.columns = ['names', 'country', 'labels']
-    if tokenize:
-        tokens_df = pd.read_csv('./data/tokenized_names.csv')
-        df = df.merge(tokens_df[['instance', 'tokenized']], on='instance', how='left')
-
 
     for country in COUNTRY_DICT.keys():
         df_country = df[df['country'] == country]
-        if tokenize:
-            names = df_country['tokenized']
-        else:
-            names = df_country['names']
         labels = df_country['labels']
         country_keywrds = []
         if method == 'counter_algorithm':

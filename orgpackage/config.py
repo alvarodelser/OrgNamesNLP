@@ -1,9 +1,15 @@
 import json
+from pathlib import Path
 
-with open("data/country_dictionary.json", "r") as f:
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+COUNTRY_DICT_PATH = BASE_DIR / "data" / "country_dictionary.json"
+ENTITY_DICT_PATH = BASE_DIR / "data" / "entity_dictionary.json"
+
+with open(COUNTRY_DICT_PATH, "r") as f:
     COUNTRY_DICT = json.load(f)
 
-with open("data/entity_dictionary.json", "r") as f:
+with open(ENTITY_DICT_PATH, "r") as f:
     ENTITY_DICT = json.load(f)
 
 
