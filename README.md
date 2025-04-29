@@ -1,2 +1,2 @@
 # OrgNamesNLP
-A comparative study on Natural Language Techniques ability to infer subclasses of European Public Organisation based on their names.
+Repository of Linguistic Patterns in European Public Organization Names, a comparative study on Natural Language Techniques ability to infer subclasses of European Public Organisations based on their names. We employ ontology-based knowledge extraction to evaluate three NLP approaches: rule-based keyword extraction, zero-shot Natural Language Inference, and embedding-based semantic similarity —under low-context, low-resource assumptions.
