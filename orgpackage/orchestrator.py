@@ -3,11 +3,11 @@ import os
 import ast
 import numpy as np
 import pandas as pd
-
-from orgpackage.aux import load_experiments, get_id
+from tqdm.notebook import tqdm
+from orgpackage.aux import load_experiments, get_id, save_trained_model, load_embeddings
 from orgpackage.config import STRUCTURE_MAPPING, NLI_MODELS, DOMAIN_CLASSES_CORR, EMB_MODELS
-
-from orgpackage.trainer import train_rules, optimize_parameter
+from orgpackage.evaluator import evaluate_classifier_experiment
+from orgpackage.trainer import train_rules, optimize_parameter, train_classifier
 
 
 
@@ -37,8 +37,8 @@ def rule_loader():
         'structure': 'nested-class',
         'keywords': get_keywords(domain, method)
     }
-    new_row = pd.DataFrame([[id, domain, technique, method, params]],
-                           columns=["ID", "Domain", "Technique", "Method", "Parameters"])
+    new_row = pd.DataFrame([[id, domain, technique, method, params, None, None, None]],
+                           columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
     experiments = pd.concat([experiments, new_row], ignore_index=True)
 
     #################### LLM RULES #######################
@@ -52,8 +52,8 @@ def rule_loader():
             'token_num': 5,
             'keywords': get_keywords(domain, method)
         }
-        new_row = pd.DataFrame([[id, domain, technique, method, params]],
-                               columns=["ID", "Domain", "Technique", "Method", "Parameters"])
+        new_row = pd.DataFrame([[id, domain, technique, method, params, None, None, None]],
+                               columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
         experiments = pd.concat([experiments, new_row], ignore_index=True)
     experiments.to_csv("./results/experiments.csv", index=False)
 
@@ -88,62 +88,109 @@ def nli_orchestrator(): # Generates the experiments for NLI
                         'model': model,
                         'prompt' : prompt
                     }
-                    new_row = pd.DataFrame([[id, domain, technique, method, params]], columns=["ID", "Domain", "Technique", "Method", "Parameters"])
+                    new_row = pd.DataFrame([[id, domain, technique, method, params, None, None, None]], 
+                                          columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
                     experiments = pd.concat([experiments, new_row], ignore_index=True)
     experiments.to_csv(file_path, index=False)
 
 
 
 ############################################################# EMBEDDIGS ######################################################
-def embedding_orchestrator(trains, validations, euhub = False):
+            ############## Cosine Similarity #################
+def similarity_orchestrator(trains, validations, euhub=False):
     file_path = "./results/experiments.csv"
+    embeddings_base_path='./results/embeddings/'
     if not os.path.exists(file_path):
         experiments = pd.DataFrame(
             columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
     else:
         experiments = load_experiments(file_path)
-
-
+    
+    # Load label embeddings
+    labels_path = os.path.join(embeddings_base_path, 'label_embeddings.csv')
+    label_embeddings = load_embeddings(file_path=labels_path)
 
     for model in EMB_MODELS.keys(): # models are first loop as they are heavy to load
-        if euhub == True:  # Wikidata dataset
-            embeddings = pd.read_csv(f'./results/embeddings/{model}_embeddings.csv')
-        else:  # EU Contract Hub Dataset
-            embeddings = pd.read_csv(f'./results/embeddings/euhub_{model}_embeddings.csv')
-        embeddings = embeddings[['instances', model + '_embedding']]
-
+        # Determine embeddings paths based on dataset type
+        if euhub:
+            embeddings_path = os.path.join(embeddings_base_path, f"euhub_{model}_embeddings.csv") 
+        else:
+            embeddings_path = os.path.join(embeddings_base_path, f"{model}_embeddings.csv")
+            
+        # Load embeddings once per model
+        embedding_column = f"{model}_embedding"
+        print(f"Loading embeddings for model: {model}")
+        instance_embeddings = load_embeddings(file_path=embeddings_path)
+        
         for domain in ['medical', 'administrative', 'education']:
             technique = 'embedding'
-            train = trains[domain]
-            train = train.merge(embeddings, on='instances', how='left')
+            
+            # Merge embeddings with training and validation data
+            train = trains[domain].merge(
+                instance_embeddings[['instance', embedding_column]], 
+                on='instance', 
+                how='left'
+            )
+            
+            validation = validations[domain].merge(
+                instance_embeddings[['instance', embedding_column]], 
+                on='instance', 
+                how='left'
+            )
+            
+            # Report missing embeddings
+            train_missing = train[embedding_column].isna().sum()
+            if train_missing > 0:
+                print(f"Warning: {train_missing}/{train[embedding_column].shape[0]} missing embeddings in {domain} domain ")
+                
+            val_missing = validation[embedding_column].isna().sum()
+            if val_missing > 0:
+                print(f"Warning: {val_missing}/{validation[embedding_column].shape[0]} missing embeddings in {domain} domain ")
 
-            validation = validations[domain]
-            validation = validation.merge(embeddings, on='instances', how='left')
-
-            ############## Cosine Similarity #################
             method = 'similarity'
             for n_shot in ['0_shot', '1_shot', 'few_shot']:
                 id = get_id(experiments, domain, technique, method)
                 prototypes = {}
                 if n_shot == '0_shot':
                     for cls in DOMAIN_CLASSES_CORR.get(domain, []):
-                        label_embeddings = pd.read_csv('results/embeddings/label_embeddings.csv')
-                        prototypes[cls] = label_embeddings[label_embeddings['label'] == cls][model + '_embedding'].values[0] # We search in a pre-made list of labels as we cannot store all (fasttext specially) models on memory at the same time.
+                        matching_row = label_embeddings[label_embeddings['label'] == cls.replace('_', ' ')]
+                        
+                        embedding_value = matching_row[embedding_column].values[0]
+                        # Ensure it's a 2D array for cosine_similarity
+                        if isinstance(embedding_value, np.ndarray) and embedding_value.ndim == 1:
+                            embedding_value = embedding_value.reshape(1, -1)
+                            prototypes[cls] = embedding_value
+                        else:
+                            print(f"WARNING: No embedding found for class '{cls}'")
+                            continue  # Skip this class
                 elif n_shot == '1_shot':
                     for cls in DOMAIN_CLASSES_CORR.get(domain, []):
-                        sampled_id = train[train[cls]==1]['instances'].sample(n=1, random_state=42).values[0]
-                        prototypes[cls] = train[train['instances'] == sampled_id][model + '_embedding'].values[0]
+                        sampled_id = train[train[cls]==1]['instance'].sample(n=1, random_state=42).values[0]
+                        embedding_value = train[train['instance'] == sampled_id][embedding_column].values[0]
+                        # Ensure it's a 2D array
+                        if isinstance(embedding_value, np.ndarray) and embedding_value.ndim == 1:
+                            embedding_value = embedding_value.reshape(1, -1)
+                        prototypes[cls] = embedding_value
 
                 elif n_shot == 'few_shot':
                     for cls in DOMAIN_CLASSES_CORR.get(domain, []):
                         prototypes[cls] = {}
                         for country in train['country'].unique():
-                            sampled_id = train[(train[cls] == 1) & (train['country'] == country)]['instances'].sample(n=1, random_state=42).values[0]
-                            prototypes[cls][country] = train[train['instances'] == sampled_id][model + '_embedding'].values[0]
+                            try:
+                                sampled_id = train[(train[cls] == 1) & (train['country'] == country)]['instance'].sample(n=1, random_state=42).values[0]
+                                embedding_value = train[train['instance'] == sampled_id][embedding_column].values[0]
+                                # Ensure it's a 2D array
+                                if isinstance(embedding_value, np.ndarray) and embedding_value.ndim == 1:
+                                    embedding_value = embedding_value.reshape(1, -1)
+                                prototypes[cls][country] = embedding_value
+                            except ValueError:
+                                # Skip if no matching instances for this country
+                                print(f"No instances of class {cls} for country {country}")
+                                continue
 
                 validation_exps = pd.DataFrame(
-                    columns=["ID", "Domain", "Technique", "Method", "Parameters"])
-                for distance in np.arange(0.1, 1.0, 0.1):
+                    columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
+                for distance in [0.01, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7]:
                     params = {
                         'structure': STRUCTURE_MAPPING[domain][0], # Cosine Similarity has no support for nested classification
                         'n_shot': n_shot,
@@ -151,45 +198,151 @@ def embedding_orchestrator(trains, validations, euhub = False):
                         'distance': distance,
                         'prototypes': prototypes
                     }
-                    val_new_row = pd.DataFrame([[id, domain, technique, method, params]],
-                                               columns=["ID", "Domain", "Technique", "Method", "Parameters"])
+                    val_new_row = pd.DataFrame([[id, domain, technique, method, params, None, None, None]],
+                                               columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
                     validation_exps = pd.concat([validation_exps, val_new_row], ignore_index=True)
-                experiments.loc[len(experiments)] = optimize_parameter(validation_exps, validation, 'distance') # Append only best experiment
+                best_exp = optimize_parameter(validation_exps, validation, 'distance')  # Get best experiment
+                experiments = pd.concat([experiments, best_exp], ignore_index=True)  # Append using concat instead of direct assignment
+                experiments.to_csv(file_path, index=False)
 
-        ###############  Classifier Head #################
-        method = 'classifier'
-        classifier_params = {
-            'logreg': [
-                {'C': C, 'solver': solver, 'penalty': 'l1' if solver == 'liblinear' else 'l2'}
-                for C in [0.01, 0.1, 1, 10]
-                for solver in ['liblinear', 'lbfgs']
-            ],
-            'svm': [
-                {'C': C, 'kernel': kernel, **({'gamma': gamma} if kernel == 'rbf' else {})}
-                for C in [0.1, 1, 10]
-                for kernel in ['linear', 'rbf']
-                for gamma in (['scale', 'auto'] if kernel == 'rbf' else [])
-            ]
-        }
+            ##############  Classifier Head #################
+def classifier_orchestrator(trains, validations, euhub=False, overwrite=False, models=None, classifiers=None):
+    file_path = "./results/experiments.csv"
+    embeddings_base_path='./results/embeddings/'
+    if not os.path.exists(file_path):
+        experiments = pd.DataFrame(
+            columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
+    else:
+        experiments = load_experiments(file_path)
+    
+    # Use all models if none are specified
+    if models is None:
+        models_to_use = EMB_MODELS.keys()
+    else:
+        models_to_use = [m for m in models if m in EMB_MODELS]
+        if not models_to_use:
+            print("Warning: No valid models specified. Using all models.")
+            models_to_use = EMB_MODELS.keys()
+    
+    # Define valid classifier types
+    valid_classifiers = ['logreg', 'svm']
+    # Use all classifiers if none are specified
+    if classifiers is None:
+        classifiers_to_use = valid_classifiers
+    else:
+        classifiers_to_use = [c for c in classifiers if c in valid_classifiers]
+        if not classifiers_to_use:
+            print("Warning: No valid classifiers specified. Using all classifiers.")
+            classifiers_to_use = valid_classifiers
 
-        for model in EMB_MODELS.keys():
-            for classifier in classifier_params.keys():
+    for model in models_to_use:
+        # Determine embeddings paths based on dataset type
+        if euhub:
+            embeddings_path = os.path.join(embeddings_base_path, f"euhub_{model}_embeddings.csv") 
+        else:
+            embeddings_path = os.path.join(embeddings_base_path, f"{model}_embeddings.csv")
+            
+        # Load embeddings once per model
+        embedding_column = f"{model}_embedding"
+        print(f"Loading embeddings for model: {model}")
+        instance_embeddings = load_embeddings(file_path=embeddings_path)
+
+        for domain in ['medical', 'administrative', 'education']:
+            technique = 'embedding'
+            structure = STRUCTURE_MAPPING[domain][-1] # We will not compare 3-class structure for classifiers.
+            train = trains[domain].merge(
+                instance_embeddings[['instance', embedding_column]], 
+                on='instance', 
+                how='left'
+            )
+            validation = validations[domain].merge(
+                instance_embeddings[['instance', embedding_column]], 
+                on='instance', 
+                how='left'
+            )
+            method = 'classifier'
+            classifier_params = {
+                'logreg': [
+                    {'C': C, 'solver': solver, 'penalty': 'l1' if solver == 'liblinear' else 'l2'}
+                    for C in [0.01, 0.1, 1, 10]
+                    for solver in ['liblinear', 'lbfgs']
+                ],
+                'svm': [
+                    {'C': C, 'kernel': kernel, **({'gamma': gamma} if kernel == 'rbf' else {})}
+                    for C in [0.1, 1, 10]
+                    for kernel in ['linear', 'rbf']
+                    for gamma in (['scale', 'auto'] if kernel == 'rbf' else [])
+                ]
+            }
+            for classifier in classifiers_to_use:
+                # Check if an experiment with the same configuration already exists
+                existing_experiment = False
+                if not overwrite:
+                    for _, exp in experiments.iterrows():
+                        if (exp['Domain'] == domain and 
+                            exp['Technique'] == technique and 
+                            exp['Method'] == method and 
+                            exp['Parameters'].get('model') == model and 
+                            exp['Parameters'].get('structure') == structure and 
+                            exp['Parameters'].get('classifier') == classifier):
+                            
+                            existing_experiment = True
+                            print(f"Skipping: Experiment already exists for {domain}, {model}, {structure}, {classifier}")
+                            
+                            # Check if the experiment failed (has no accuracy score)
+                            if pd.isna(exp['Accuracy']) or exp['Accuracy'] == 0:
+                                print(f"But existing experiment appears to have failed. Set overwrite=True to retry.")
+                            break
+                if existing_experiment:
+                    continue
+                    
+                # Create validation experiments dataframe
                 id = get_id(experiments, domain, technique, method)
+                validation_exps = pd.DataFrame(
+                    columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
+                
+                # Only use configs for the current classifier
                 for config in classifier_params[classifier]:
-                    validation_exps = pd.DataFrame(
-                        columns=["ID", "Domain", "Technique", "Method", "Parameters"])
-
                     params = {
-                        # 'structure': STRUCTURE_MAPPING_WHICH_ONE[domain],
+                        'structure': structure,
                         'model': model,
                         'classifier': classifier,
                         **config
                     }
-                    val_new_row = pd.DataFrame([[id, domain, technique, method, params]],
-                                               columns=["ID", "Domain", "Technique", "Method", "Parameters"])
+                    val_new_row = pd.DataFrame([[id, domain, technique, method, params, None, None, None]],
+                                            columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
                     validation_exps = pd.concat([validation_exps, val_new_row], ignore_index=True)
+                
+                # Train models for all configurations
+                for idx, exp in tqdm(validation_exps.iterrows(), total=len(validation_exps), desc=f"Training {classifier} for {structure}"):
+                    try:
+                        trained_model = train_classifier(train, exp)
+                        params = exp['Parameters']
+                        if structure == 'nested-class' and isinstance(trained_model, dict):
+                            for name, clf in trained_model.items():
+                                clf_path = save_trained_model(clf, f"{exp['ID']}_{name}", params)
+                                params[f"trained_classifier_{name}"] = clf_path
+                        else:
+                            clf_path = save_trained_model(trained_model, exp['ID'], params)
+                            params["trained_classifier"] = clf_path
+                        
+                        exp = evaluate_classifier_experiment(exp, validation, trained_model) # We do not use the optimize_parameter function to not load all trained models
+                        validation_exps.at[idx, 'Accuracy'] = exp['Accuracy']
+                        validation_exps.at[idx, 'Recall'] = exp['Recall']
+                        validation_exps.at[idx, 'F1'] = exp['F1']
+                        validation_exps.at[idx, 'Parameters'] = params
 
+                    except Exception as e:
+                        print(f"Error training model for {domain}, structure {structure}, {classifier}: {e}")
+                        # Skip this experiment
+                        validation_exps = validation_exps.drop(idx)
 
+                if not validation_exps.empty:
+                    best_exp_df = validation_exps.loc[[validation_exps['F1'].idxmax()]] 
+                    experiments = pd.concat([experiments, best_exp_df], ignore_index=True)
+                    experiments.to_csv(file_path, index=False)
+                else:
+                    print(f"Warning: No valid experiments for {domain}, structure {structure}, {classifier}")
 
 ############################## FEW SHOT LEARNING #################################
 

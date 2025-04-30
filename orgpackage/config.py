@@ -38,13 +38,15 @@ SPACY_MODELS = {
 DOMAIN_CLASSES_CORR = {
         'medical': ['hospital', 'university_hospital'],
         'administrative': ['local_government'],
-        'education': ['primary_school', 'secondary_school']
+      #  'education': ['primary_school', 'secondary_school']
     }
+
+
 
 STRUCTURE_MAPPING = {
     'medical': ['3-class', 'nested-class'],
     'administrative': ['2-class'],
-    'education': ['3-multiclass']
+   #'education': ['3-multiclass']
 }
 
 NLI_MODELS = {

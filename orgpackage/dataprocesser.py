@@ -145,7 +145,7 @@ def plot_data_volume(dfs, labels=None):
     country_flags = {key: value["flag"].lower() for key, value in COUNTRY_DICT.items()}
     country_names = {key: value["country"] for key, value in COUNTRY_DICT.items()}
 
-    fig, ax = plt.subplots(figsize=(10, 10))
+    fig, ax = plt.subplots(figsize=(15, 4.5))
 
     # Bar width settings
     num_datasets = len(dfs)
@@ -170,7 +170,7 @@ def plot_data_volume(dfs, labels=None):
             if actual_height > max_visible_height or actual_height < 100:
                 text_y = bar.get_y() + height + 100  # Position text just above the bar
                 ax.text(bar.get_x() + bar.get_width() / 2, text_y, f"{int(actual_height)}",
-                        ha="center", va="bottom", fontsize=5, color="black", rotation=90)
+                        ha="center", va="bottom", fontsize=7, color="black", rotation=90)
 
     ax.set_ylim(-1000, max_visible_height)
     ax.yaxis.grid(True, linestyle='-', alpha=0.4)
@@ -327,7 +327,7 @@ def extract_wikidata_classes(class_file, english_label = False): #In batches, qu
 
 def obtain_subhierarchy(class_id):
     extract_wikidata_instances(class_id=class_id)
-    read_raw_instance_results(class_id=class_id).to_csv("./data/wikidata_"+class_id+"_hierarchy.csv")
+    read_raw_instance_results(class_id=class_id).to_csv("./data/wikidata_"+class_id+"_hierarchy.csv", index=False)
     generate_clean_class_df("./data/wikidata_"+class_id+"_hierarchy.csv", "./data/wikidata_"+class_id+"_hierarchy.csv")
     extract_wikidata_classes("./data/wikidata_"+class_id+"_hierarchy.csv", english_label=False)
     extract_wikidata_classes("./data/wikidata_"+class_id+"_hierarchy.csv", english_label=True)

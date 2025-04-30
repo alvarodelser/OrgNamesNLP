@@ -194,17 +194,18 @@ def country_word_generator(names, countries, labels, method, ntokens=5):
 
     for country in COUNTRY_DICT.keys():
         df_country = df[df['country'] == country]
-        labels = df_country['labels']
+        country_names = df_country['names']
+        country_labels = df_country['labels']
         country_keywrds = []
         if method == 'counter_algorithm':
-            country_keywrds = word_counter_algorithm(names, labels, n=ntokens)
+            country_keywrds = word_counter_algorithm(country_names, country_labels, n=ntokens)
         elif method == 'idf_best':
             country_stpwrds = []
             languages = COUNTRY_DICT[country]['languages']
             for language in languages:
                 if stopwords.has_lang(language):
                     country_stpwrds.extend(stopwords.stopwords(language))
-            country_keywrds = select_k_best_words(names, country_stpwrds, labels, n=ntokens)
+            country_keywrds = select_k_best_words(country_names, country_stpwrds, country_labels, n=ntokens)
         all_keywrds[country] = country_keywrds
     return all_keywrds
 
@@ -214,7 +215,14 @@ def rule_classify(names, keywords): # Receives a dict of country lists of regex 
     if keywords:
         patterns = r"(" + r"|".join(keywords) + r")"
         combined_pattern = re.compile(patterns, re.IGNORECASE)
-        result = [1 if combined_pattern.search(name) else 0 for name in names]
+        result = []
+        for name in names:
+            # Convert to string and handle NaN/None values
+            if pd.isna(name):
+                result.append(0)
+            else:
+                name_str = str(name)
+                result.append(1 if combined_pattern.search(name_str) else 0)
         return result
     else:
         return [0] * len(names)
