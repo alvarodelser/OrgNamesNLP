@@ -3,7 +3,7 @@ import os
 import ast
 import numpy as np
 import pandas as pd
-from tqdm.notebook import tqdm
+from orgpackage.aux import log_progress
 from orgpackage.aux import load_experiments, get_id, save_trained_model, load_embeddings
 from orgpackage.config import STRUCTURE_MAPPING, NLI_MODELS, DOMAIN_CLASSES_CORR, EMB_MODELS
 from orgpackage.evaluator import evaluate_classifier_experiment
@@ -314,7 +314,9 @@ def classifier_orchestrator(trains, validations, euhub=False, overwrite=False, m
                     validation_exps = pd.concat([validation_exps, val_new_row], ignore_index=True)
                 
                 # Train models for all configurations
-                for idx, exp in tqdm(validation_exps.iterrows(), total=len(validation_exps), desc=f"Training {classifier} for {structure}"):
+                total_configs = len(validation_exps)
+                for iter_i, (idx, exp) in enumerate(validation_exps.iterrows()):
+                    log_progress(iter_i, total_configs, f"Training {classifier} for {structure}")
                     try:
                         trained_model = train_classifier(train, exp)
                         params = exp['Parameters']

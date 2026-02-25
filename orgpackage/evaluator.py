@@ -5,11 +5,10 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, recall_score, f1_score
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import pipeline
-from tqdm import tqdm
 import os # Added for path joining
 
 from orgpackage.config import DOMAIN_CLASSES_CORR, NLI_MODELS, COUNTRY_DICT
-from orgpackage.aux import load_experiments
+from orgpackage.aux import load_experiments, log_progress
 from orgpackage.ruleclassifier import  rule_classify
 from orgpackage.aux import load_dataset, load_trained_model, prepare_labels
 
@@ -144,7 +143,9 @@ def nli_classify(zero_shot_classifier, prompt: str, names: list, labels: list, m
         labels.remove('other')
 
     results = {label: {"classification": [], "confidence": []} for label in labels}
-    for name in tqdm(names, desc="Classifying organizations", unit="organization"):
+    total_names = len(names)
+    for i, name in enumerate(names):
+        log_progress(i, total_names, "Classifying organizations")
         result = zero_shot_classifier(name,
                                         labels,
                                         hypothesis_template = prompt,

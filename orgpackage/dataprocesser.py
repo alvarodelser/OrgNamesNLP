@@ -7,7 +7,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import pandas as pd
 import numpy as np
 from PIL import Image
-from tqdm import tqdm
+from orgpackage.aux import log_progress
 from collections import defaultdict
 from collections import Counter
 import ast
@@ -219,7 +219,9 @@ def plot_data_classes(final_df):
 
 def most_common_classes(df):
     all_classes = []
-    for classes_list in tqdm(df['classes'], desc="Flattening lists", unit="row"):
+    total_rows = len(df['classes'])
+    for i, classes_list in enumerate(df['classes']):
+        log_progress(i, total_rows, "Flattening lists")
         all_classes.extend(classes_list)  # Extend the main list with the elements of each list
     class_counts = Counter(all_classes)
     sorted_class_counts = class_counts.most_common()
@@ -260,8 +262,10 @@ def extract_wikidata_classes(class_file, english_label = False): #In batches, qu
         languages_str = ', '.join([f'"{lang}"' for lang in languages])  # Format languages properly
 
         # Process instances in batches
-        for i in tqdm(range(0, len(country_instances), batch_size),
-                      desc=f"Processing {COUNTRY_DICT[country]['country']}"):
+        batch_range = range(0, len(country_instances), batch_size)
+        total_batches = len(batch_range)
+        for batch_i, i in enumerate(batch_range):
+            log_progress(batch_i, total_batches, f"Processing {COUNTRY_DICT[country]['country']}")
             instances_str = " ".join(country_instances[i:i + batch_size])
             if english_label:
                 class_query = f"""

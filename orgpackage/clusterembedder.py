@@ -4,7 +4,7 @@ import re
 
 import torch
 import torch.nn.functional as F
-from tqdm import tqdm
+from orgpackage.aux import log_progress
 from torch import Tensor
 import os
 import pandas as pd
@@ -164,7 +164,10 @@ def embedder(df, model_key, euhub=False):
     print(f"Generating embeddings for {model_key} starting from index {start_idx}")
     names = df_saved['names'].tolist()
 
-    for i in tqdm(range(start_idx, len(names), batch_size), desc=f"Generating embeddings for {model_key}"):
+    batch_range = range(start_idx, len(names), batch_size)
+    total_batches = len(batch_range)
+    for batch_i, i in enumerate(batch_range):
+        log_progress(batch_i, total_batches, f"Generating embeddings for {model_key}")
         batch_names = names[i:i + batch_size]  # Batch processing
         batch_dict = tokenizer(batch_names, max_length=max_length, padding=True, truncation=True,
                                return_tensors='pt')

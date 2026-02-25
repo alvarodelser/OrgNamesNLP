@@ -8,6 +8,18 @@ import random
 import hashlib
 
 
+def log_progress(i, total, task, step_pct=10):
+    """Print a log line at the start and at each *step_pct* % milestone."""
+    if total <= 0:
+        return
+    if i == 0:
+        print(f"[{task}] Starting ({total} items)", flush=True)
+    pct = (i + 1) * 100 // total
+    prev_pct = i * 100 // total
+    if pct // step_pct > prev_pct // step_pct:
+        print(f"  [{task}] {pct}% ({i + 1}/{total})", flush=True)
+
+
 def load_dataset(datafile = './data/wikidata_enriched_dataset.csv', tokenfile = './results/tokenized_names.csv', decompfile = './results/decomposed_names.csv'):
     # Load datasets
     df = pd.read_csv(datafile)

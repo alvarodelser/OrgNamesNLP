@@ -3,7 +3,7 @@ from collections import Counter
 import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_selection import SelectKBest, chi2
-from tqdm import tqdm
+from orgpackage.aux import log_progress
 import stopwordsiso as stopwords
 import os
 import pandas as pd
@@ -50,7 +50,9 @@ def tokenize(df, save_path="./results/tokenized_names.csv"):
     df_to_process = df[~df["instance"].isin(processed_instances)]
 
     # Process each row
-    for i in tqdm(range(len(df_to_process)), desc="Tokenizing Names"):
+    total_to_tokenize = len(df_to_process)
+    for i in range(total_to_tokenize):
+        log_progress(i, total_to_tokenize, "Tokenizing Names")
         try:
             row = df_to_process.iloc[i]
             instance_id = row["instance"]
@@ -104,7 +106,9 @@ def decompose_names(df, save_path="./results/decomposed_names.csv"):
         processed_instances = set()
 
     df_to_process = df[~df["instance"].isin(processed_instances)]
-    for i in tqdm(range(len(df_to_process)), desc="Decomposing Names"):
+    total_to_decompose = len(df_to_process)
+    for i in range(total_to_decompose):
+        log_progress(i, total_to_decompose, "Decomposing Names")
         try:
             row = df_to_process.iloc[i]
             instance_id = row["instance"]

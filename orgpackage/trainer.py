@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-from tqdm import tqdm
+from orgpackage.aux import log_progress
 
 from orgpackage.config import STRUCTURE_MAPPING, DOMAIN_CLASSES_CORR, EMB_MODELS
 from orgpackage.aux import load_experiments, get_id, prepare_labels
@@ -21,7 +21,9 @@ def optimize_parameter(validation_exps, validation, parameter): #token_num, dist
     else:
         param_exps = pd.read_csv(file_path)
         
-    for index, exp in tqdm(validation_exps.iterrows(), total=len(validation_exps), desc=f"Optimizing {parameter}"):
+    total_exps = len(validation_exps)
+    for iter_i, (index, exp) in enumerate(validation_exps.iterrows()):
+        log_progress(iter_i, total_exps, f"Optimizing {parameter}")
         if parameter == 'token_num':
             exp = evaluate_rule_experiment(exp, validation)  # Evaluation on validation set
         elif parameter == 'distance':
