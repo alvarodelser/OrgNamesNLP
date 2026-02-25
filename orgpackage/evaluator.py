@@ -9,13 +9,9 @@ from tqdm import tqdm
 import os # Added for path joining
 
 from orgpackage.config import DOMAIN_CLASSES_CORR, NLI_MODELS, COUNTRY_DICT
-from orgpackage.orchestrator import load_experiments
+from orgpackage.aux import load_experiments
 from orgpackage.ruleclassifier import  rule_classify
 from orgpackage.aux import load_dataset, load_trained_model, prepare_labels
-
-import ast
-import numpy as np
-from sklearn.metrics import accuracy_score, recall_score, f1_score
 
 def avg_accuracy_score(y_true, y_pred):
     accuracy_list = []
@@ -119,6 +115,26 @@ def evaluate_rules(tests):
 
 
 ############################################################# NLI ######################################################
+
+def _merge_columns_to_confidences(confidences, source_df, columns):
+    """Merge prediction/confidence columns from *source_df* into the
+    unified *confidences* DataFrame, matching rows on the ``instance`` column.
+
+    Columns that do not yet exist in *confidences* are created (filled
+    with NaN for instances not present in *source_df*).  Existing values
+    are overwritten for matching instances.
+    """
+    mapping = source_df.set_index("instance")[columns]
+    for col in columns:
+        if col not in confidences.columns:
+            confidences[col] = np.nan
+        confidences.loc[
+            confidences["instance"].isin(source_df["instance"]), col
+        ] = confidences.loc[
+            confidences["instance"].isin(source_df["instance"]), "instance"
+        ].map(mapping[col])
+
+
 def nli_classify(zero_shot_classifier, prompt: str, names: list, labels: list, multi_label: bool = False):
     THRESHOLD = 0.65
 
@@ -178,28 +194,84 @@ def evaluate_nli_experiment(exp, test, classifier, prompt): # Evaluates one mode
     return exp
 
 
-def evaluate_nli(tests): # Evaluates per model of experiments
+def evaluate_nli(tests, confidences_path="./results/nli_confidences.csv"):
+    """
+    Run NLI evaluation for all pending experiments.
+
+    Predictions and confidences are accumulated in a single CSV
+    (``confidences_path``) that contains **all entities across all
+    domains**.  Each experiment adds ``<exp_id>_<class>`` (0/1) and
+    ``<exp_id>_<class>_conf`` (float) columns.
+
+    Metrics are computed on the test set passed in ``tests[domain]``.
+    If the CSV already contains predictions for an experiment whose
+    metrics are missing (e.g. after a kernel crash), the existing
+    predictions are reused to compute metrics without re-running
+    inference.
+    """
     experiments_path = './results/experiments.csv'
     experiments = load_experiments(experiments_path)
 
+    # ── load or initialise the unified confidences table ──────────────────
+    if os.path.exists(confidences_path):
+        confidences = pd.read_csv(confidences_path)
+    else:
+        frames = [df.copy() for df in tests.values()]
+        confidences = pd.concat(frames, ignore_index=True).drop_duplicates(
+            subset=["instance"], keep="first"
+        )
+
     for index, exp in experiments.iterrows():
-        if exp['Technique'] == 'nli' and pd.isna(exp['Accuracy']):
-            domain = exp['Domain']
-            model_key = exp['Parameters']['model']
-            prompt = exp['Parameters']['prompt']
-            test_path = "./results/confidences/" + exp['Domain'] + "_" + model_key + ".csv"
+        if exp['Technique'] != 'nli' or not pd.isna(exp['Accuracy']):
+            continue
 
+        domain = exp['Domain']
+        model_key = exp['Parameters']['model']
+        prompt = exp['Parameters']['prompt']
+        classes = DOMAIN_CLASSES_CORR[domain]
+        is_multiclass = (exp['Parameters']['structure'] == '2-multiclass')
+        test_df = tests[domain]
+
+        pred_cols = [f"{exp['ID']}_{cls}" for cls in classes]
+        conf_cols = [f"{exp['ID']}_{cls}_conf" for cls in classes]
+
+        # ── check whether predictions already exist in the CSV ────────────
+        has_predictions = (
+            all(c in confidences.columns for c in pred_cols)
+            and confidences.loc[
+                confidences["instance"].isin(test_df["instance"]),
+                pred_cols[0],
+            ].notna().any()
+        )
+
+        if has_predictions:
+            print(f"Reusing existing predictions for {exp['ID']} from {confidences_path}")
+            conf_sub = confidences[confidences["instance"].isin(test_df["instance"])]
+            for col in pred_cols + conf_cols:
+                if col in conf_sub.columns and col not in test_df.columns:
+                    mapping = conf_sub.set_index("instance")[col]
+                    test_df[col] = test_df["instance"].map(mapping)
+        else:
             print(f"Loading model: {model_key}")
-            model = pipeline("zero-shot-classification", model=NLI_MODELS[model_key])
-            exp = evaluate_nli_experiment(exp, tests[domain], model, prompt)
+            classifier = pipeline("zero-shot-classification", model=NLI_MODELS[model_key])
+            exp = evaluate_nli_experiment(exp, test_df, classifier, prompt)
+            _merge_columns_to_confidences(confidences, test_df, pred_cols + conf_cols)
+            confidences.to_csv(confidences_path, index=False)
+            del classifier
+            gc.collect()
 
-            tests[domain].to_csv(test_path, index=False) #SAVING RESULTS PER DOMAIN
-            experiments.loc[index] = exp
-            experiments.to_csv(experiments_path, index=False) #SAVING PER MODEL
+        # ── compute / recompute metrics ───────────────────────────────────
+        y_true = test_df[classes]
+        y_pred = test_df[pred_cols].fillna(0).astype(int)
+        if is_multiclass:
+            exp['Accuracy'] = avg_accuracy_score(y_true, y_pred)
+        else:
+            exp['Accuracy'] = accuracy_score(y_true, y_pred)
+        exp['Recall'] = recall_score(y_true, y_pred, average='macro')
+        exp['F1'] = f1_score(y_true, y_pred, average='macro')
 
-            # Explicitly delete the model and free memory
-            del model
-            gc.collect()  # Run garbage collection
+        experiments.loc[index] = exp
+        experiments.to_csv(experiments_path, index=False)
 
 
 ############################################################# EMBEDDIGS ######################################################
