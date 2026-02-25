@@ -46,7 +46,7 @@ DOMAIN_CLASSES_CORR = {
 STRUCTURE_MAPPING = {
     'medical': ['3-class', 'nested-class'],
     'administrative': ['2-class'],
-   #'education': ['3-multiclass']
+    'education': ['3-multiclass']
 }
 
 NLI_MODELS = {
