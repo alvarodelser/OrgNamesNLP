@@ -146,6 +146,7 @@ def build_few_shot_prompt(train_df, domain, classes):
 
     few_shot_block = '\n'.join(examples)
     class_list = ', '.join(classes)
+    example_pairs = ', '.join([f'"{c}": 0' for c in classes])
     prompt = (
         f"You are an expert classifier of organization names in the {domain} domain.\n"
         f"Given an organization name, decide which of the following classes it belongs to: [{class_list}].\n"
@@ -153,7 +154,7 @@ def build_few_shot_prompt(train_df, domain, classes):
         f'If it belongs to none, output "none".\n\n'
         f"Here are examples from different countries:\n"
         f"{few_shot_block}\n\n"
-        f'Respond with ONLY a JSON object like: {{{", ".join(f\'"{c}": 0\' for c in classes)}}} '
+        f"Respond with ONLY a JSON object like: {{{example_pairs}}} "
         f"using 1 for yes and 0 for no, for each class in [{class_list}]. Nothing else."
     )
     return prompt
