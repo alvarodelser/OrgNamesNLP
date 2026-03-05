@@ -275,6 +275,104 @@ def evaluate_nli(tests, confidences_path="./results/nli_confidences.csv"):
         experiments.to_csv(experiments_path, index=False)
 
 
+############################################################# NLI FEW-SHOT ##################################################
+
+def _parse_ollama_response(response_text, classes):
+    """Extract class predictions from an Ollama response, stripping
+    <think> blocks emitted by reasoning models."""
+    import re, json as _json
+    cleaned = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL).strip()
+
+    json_match = re.search(r'\{[^}]+\}', cleaned)
+    if json_match:
+        try:
+            parsed = _json.loads(json_match.group())
+            return {cls: int(parsed.get(cls, 0)) for cls in classes}
+        except _json.JSONDecodeError:
+            pass
+
+    result = {cls: 0 for cls in classes}
+    lower = cleaned.lower()
+    if 'none' in lower:
+        return result
+    for cls in classes:
+        if cls.replace('_', ' ') in lower or cls in lower:
+            result[cls] = 1
+    return result
+
+
+def ollama_classify(client, model, system_prompt, names, classes):
+    """Classify a list of names via Ollama chat completions."""
+    results = {cls: [] for cls in classes}
+    errors = 0
+    total = len(names)
+
+    for i, name in enumerate(names):
+        if (i + 1) % 100 == 0 or i == 0:
+            print(f"  [{i+1}/{total}] ({100*(i+1)/total:.1f}%) — {errors} errors", flush=True)
+
+        try:
+            response = client.chat(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f'Classify: "{name}"'}
+                ],
+                options={"temperature": 0.0, "num_predict": 128}
+            )
+            preds = _parse_ollama_response(response['message']['content'], classes)
+        except Exception as e:
+            if errors < 5:
+                print(f"    Error on '{name}': {e}")
+            preds = {cls: 0 for cls in classes}
+            errors += 1
+
+        for cls in classes:
+            results[cls].append(preds[cls])
+
+    print(f"  Done. {errors}/{total} errors.")
+    return results
+
+
+def evaluate_ollama_experiment(exp, test, client, model):
+    """Run Ollama inference for one experiment and compute metrics."""
+    domain = exp['Domain']
+    classes = DOMAIN_CLASSES_CORR[domain]
+    prompt = exp['Parameters']['prompt']
+
+    preds = ollama_classify(client, model, prompt, test['names'].tolist(), classes)
+
+    pred_columns = []
+    for cls in classes:
+        col_name = f"{exp['ID']}_{cls}"
+        pred_columns.append(col_name)
+        test[col_name] = preds[cls]
+
+    y_true = test[classes]
+    y_pred = test[pred_columns]
+    exp['Accuracy'] = accuracy_score(y_true, y_pred)
+    exp['Recall'] = recall_score(y_true, y_pred, average='macro')
+    exp['F1'] = f1_score(y_true, y_pred, average='macro')
+
+    exp['Parameters']['country_accuracy'] = {}
+    exp['Parameters']['country_recall'] = {}
+    exp['Parameters']['country_f1'] = {}
+    for country in test['country'].unique():
+        tc = test[test['country'] == country]
+        y_true_c = tc[classes]
+        y_pred_c = tc[pred_columns]
+        missing = (y_true_c.sum(axis=0) == 0)
+        exp['Parameters']['country_accuracy'][country] = accuracy_score(y_true_c, y_pred_c)
+        if tc.empty or missing.any():
+            exp['Parameters']['country_f1'][country] = None
+            exp['Parameters']['country_recall'][country] = None
+        else:
+            exp['Parameters']['country_recall'][country] = recall_score(y_true_c, y_pred_c, average='macro')
+            exp['Parameters']['country_f1'][country] = f1_score(y_true_c, y_pred_c, average='macro')
+
+    return exp
+
+
 ############################################################# EMBEDDIGS ######################################################
 def evaluate_similarity_experiment(exp, test):
     distance = exp['Parameters']['distance']

@@ -123,6 +123,42 @@ def get_prompts(train, classes):
 
 
 
+def build_few_shot_prompt(train_df, domain, classes):
+    """Build a few-shot system prompt by sampling one positive example per
+    country per class from the training set, plus one negative per country."""
+    examples = []
+
+    for cls in classes:
+        positives = train_df[train_df[cls] == 1]
+        for country in positives['country'].unique():
+            country_pos = positives[positives['country'] == country]
+            if not country_pos.empty:
+                row = country_pos.sample(n=1, random_state=42).iloc[0]
+                label_str = ', '.join(c for c in classes if row[c] == 1)
+                examples.append(f'  "{row["names"]}" -> {label_str}')
+
+    negatives = train_df[(train_df[classes] == 0).all(axis=1)]
+    for country in negatives['country'].unique():
+        country_neg = negatives[negatives['country'] == country]
+        if not country_neg.empty:
+            row = country_neg.sample(n=1, random_state=42).iloc[0]
+            examples.append(f'  "{row["names"]}" -> none')
+
+    few_shot_block = '\n'.join(examples)
+    class_list = ', '.join(classes)
+    prompt = (
+        f"You are an expert classifier of organization names in the {domain} domain.\n"
+        f"Given an organization name, decide which of the following classes it belongs to: [{class_list}].\n"
+        f"An organization can belong to multiple classes or none.\n"
+        f'If it belongs to none, output "none".\n\n'
+        f"Here are examples from different countries:\n"
+        f"{few_shot_block}\n\n"
+        f'Respond with ONLY a JSON object like: {{{", ".join(f\'"{c}": 0\' for c in classes)}}} '
+        f"using 1 for yes and 0 for no, for each class in [{class_list}]. Nothing else."
+    )
+    return prompt
+
+
 ############################################################# EMBEDDIGS ######################################################
 def train_classifier(train, exp):
     import ast
