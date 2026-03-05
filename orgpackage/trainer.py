@@ -148,8 +148,7 @@ def build_few_shot_prompt(train_df, domain, classes):
     class_list = ', '.join(classes)
     example_pairs = ', '.join([f'"{c}": 0' for c in classes])
     prompt = (
-        f"You are an expert classifier of organization names in the {domain} domain.\n"
-        f"Given an organization name, decide which of the following classes it belongs to: [{class_list}].\n"
+        f"Given an organization name, decide which of the following classes it belongs to: [{class_list}] or none.\n"
         f"An organization can belong to multiple classes or none.\n"
         f'If it belongs to none, output "none".\n\n'
         f"Here are examples from different countries:\n"
