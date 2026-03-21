@@ -596,24 +596,24 @@ def _render_diagnostics(
         idxs = [i for i, c in enumerate(probe_classes) if c == cls]
         color = _CLASS_COLORS.get(cls, "black")
 
-        # Draw trace lines (faint) connecting same point across epochs
+        # Draw trace lines progressively fading up to the latest epoch
         for pt_idx in idxs:
-            xs = [projections[e][pt_idx, 0] for e in range(n_epochs)]
-            ys = [projections[e][pt_idx, 1] for e in range(n_epochs)]
-            ax_proj.plot(xs, ys, color=color, alpha=0.25, linewidth=0.8, zorder=1)
+            for e in range(1, n_epochs):
+                x_seg = [projections[e - 1][pt_idx, 0], projections[e][pt_idx, 0]]
+                y_seg = [projections[e - 1][pt_idx, 1], projections[e][pt_idx, 1]]
+                alpha_seg = 0.1 + 0.8 * (e / max(n_epochs - 1, 1))
+                ax_proj.plot(x_seg, y_seg, color=color, alpha=alpha_seg, linewidth=1.0, zorder=1)
 
-        # Draw scatter for each epoch (increasingly opaque)
-        for epoch_i, proj in enumerate(projections):
-            alpha = 0.3 + 0.7 * (epoch_i / max(n_epochs - 1, 1))
-            pts = proj[idxs]  # (k, 2)
-            ax_proj.scatter(
-                pts[:, 0], pts[:, 1],
-                color=color,
-                alpha=alpha,
-                s=10,
-                zorder=2 + epoch_i,
-                edgecolors="none",
-            )
+            # Only plot the point for the LATEST epoch
+            if n_epochs > 0:
+                ax_proj.scatter(
+                    projections[-1][pt_idx, 0],
+                    projections[-1][pt_idx, 1],
+                    color=color,
+                    s=15,
+                    zorder=10,
+                    edgecolors="none",
+                )
 
     # Epoch gradient legend stub
     legend_handles = [
@@ -718,6 +718,7 @@ def watch_training_diagnostics(
     embeddings_per_epoch: list[np.ndarray] = []
     losses: list[dict] = []
     prev_loss_len = -1
+    warned_log_missing = False
 
     log_path = os.path.join(checkpoint_dir, "training_log.jsonl")
 
@@ -738,6 +739,14 @@ def watch_training_diagnostics(
                             current_losses.append(json.loads(line))
                         except json.JSONDecodeError:
                             pass
+            
+            if len(current_losses) == 0 and not warned_log_missing:
+                print(f"[diagnostics] WARNING: Log file is empty: {log_path}")
+                warned_log_missing = True
+        else:
+            if not warned_log_missing:
+                print(f"[diagnostics] WARNING: Log file not found at: {log_path}")
+                warned_log_missing = True
 
         # ── Detect new epoch checkpoints ─────────────────────────────────
         new_epochs_found = False

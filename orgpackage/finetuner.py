@@ -285,31 +285,46 @@ def prepare_finetuning_data(df: pd.DataFrame, label_cols: List[str] = LABEL_COLS
     return df
 
 
-def train_val_split(
+def train_val_test_split(
     df: pd.DataFrame,
-    train_ratio: float = 0.8,
+    train_ratio: float = 0.5,
+    val_ratio: float = 0.25,
     seed: int = 42,
     label_cols: List[str] = LABEL_COLS,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Global 80/20 stratified split.  Stratification key is the bitmask of
-    active label columns so class proportions are preserved.
+    Global stratified split into Train, Validation, and Test.  
+    Stratification key is the bitmask of active label columns.
     """
     df = df.copy()
     df["_strat_key"] = df[label_cols].apply(
         lambda row: "".join(str(int(v)) for v in row), axis=1
     )
-    train_parts, val_parts = [], []
+    train_parts, val_parts, test_parts = [], [], []
     rng = np.random.RandomState(seed)
+
     for _, group in df.groupby("_strat_key", sort=False):
         idx = group.index.tolist()
         rng.shuffle(idx)
-        split = max(1, int(len(idx) * train_ratio))
-        train_parts.append(df.loc[idx[:split]])
-        val_parts.append(df.loc[idx[split:]])
+        n = len(idx)
+        
+        split1 = int(n * train_ratio)
+        split2 = int(n * (train_ratio + val_ratio))
+        
+        # Ensure at least 1 item in train if possible
+        if split1 == 0 and n > 0:
+            split1 = 1
+            split2 = max(1, split2)
+            
+        train_parts.append(df.loc[idx[:split1]])
+        val_parts.append(df.loc[idx[split1:split2]])
+        test_parts.append(df.loc[idx[split2:]])
+        
     train_df = pd.concat(train_parts).drop(columns=["_strat_key"])
     val_df = pd.concat(val_parts).drop(columns=["_strat_key"])
-    return train_df.reset_index(drop=True), val_df.reset_index(drop=True)
+    test_df = pd.concat(test_parts).drop(columns=["_strat_key"])
+    
+    return train_df.reset_index(drop=True), val_df.reset_index(drop=True), test_df.reset_index(drop=True)
 
 
 # ===========================================================================
