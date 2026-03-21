@@ -1,4 +1,5 @@
 from itertools import combinations
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -9,7 +10,7 @@ from orgpackage.aux import load_experiments
 from orgpackage.config import DOMAIN_CLASSES_CORR
 from orgpackage.evaluator import evaluate_rule_experiment
 
-
+import re
 # ══════════════════════════════════════════════════════════════════════════════
 # 1.  Per-entity correctness tables
 # ══════════════════════════════════════════════════════════════════════════════
@@ -71,14 +72,90 @@ def build_correctness_table(
 # 2.  Permutation tests
 # ══════════════════════════════════════════════════════════════════════════════
 
+def paired_permutation_test(
+    a: np.ndarray,
+    b: np.ndarray,
+    n_perm: int = 10_000,
+    random_state: int = 42,
+) -> tuple[float, float]:
+    """
+    Simple paired permutation test between two arrays of correctness values.
+    Sign-flips the per-entity differences under the null.
+
+    Parameters
+    ----------
+    a, b : np.ndarray
+        Per-entity correctness arrays (values in {0, 1}), same length.
+
+    Returns
+    -------
+    (observed_difference, two-sided p_value)
+    """
+    rng = np.random.default_rng(random_state)
+    p_min = 1.0 / n_perm
+
+    diff = a - b
+    obs = diff.mean()
+
+    signs = rng.choice(np.array([-1, 1]), size=(n_perm, len(diff)))
+    perm_stats = (signs * diff).mean(axis=1)
+
+    p_val = max((np.abs(perm_stats) >= abs(obs)).mean(), p_min)
+    return obs, p_val
+
+
+def run_permutation_tests(
+    correctness: pd.DataFrame,
+    pairs: list[tuple[str, str]],
+    n_perm: int = 10_000,
+    random_state: int = 42,
+    correction: str = "holm",
+) -> pd.DataFrame:
+    """
+    Run permutation tests for a list of experiment pairs.
+    Parameters
+    ----------
+    correctness : pd.DataFrame
+        Correctness table with experiment IDs as columns.
+    pairs : list of tuple[str, str]
+        List of experiment pairs to test.
+    n_perm : int
+        Number of permutations.
+    random_state : int
+        Random state.
+    correction : str
+        Correction method.
+    Returns
+    -------
+    DataFrame with columns: exp_a, exp_b, obs_diff, p_value, p_corrected, significant.
+    """
+    rows = []
+    for exp_a, exp_b in pairs:
+        obs, p_val = paired_permutation_test(
+            correctness[exp_a].to_numpy(),
+            correctness[exp_b].to_numpy(),
+            n_perm=n_perm,
+            random_state=random_state,
+        )
+        rows.append({"exp_a": exp_a, "exp_b": exp_b, "obs_diff": obs, "p_value": p_val})
+
+    df = pd.DataFrame(rows)
+    from statsmodels.stats.multitest import multipletests
+    reject, p_corrected, _, _ = multipletests(df["p_value"], method=correction)
+    df["p_corrected"] = p_corrected
+    df["significant"] = reject
+    return df
+
+
+
 def stratified_permutation_test(
-    strata: list[pd.DataFrame],
+    strata: List[pd.DataFrame],
     exp_a: str,
     exp_b: str,
     n_perm: int = 10_000,
     random_state: int = 42,
     statistic: str = "pooled",
-) -> tuple[float, float]:
+) -> Tuple[float, float]:
     """
     Stratified (blocked) paired permutation test between two experiments.
 
@@ -145,7 +222,7 @@ def stratified_permutation_test(
 
 
 def run_all_pairwise_tests(
-    strata: list[pd.DataFrame],
+    strata: List[pd.DataFrame],
     n_perm: int = 10_000,
     random_state: int = 42,
     statistic: str = "pooled",
@@ -196,13 +273,13 @@ def run_all_pairwise_tests(
 
 def plot_permutation_heatmap(
     results: pd.DataFrame,
-    correctness: pd.DataFrame | list[pd.DataFrame] | None = None,
+    correctness: Optional[Union[pd.DataFrame, List[pd.DataFrame]]] = None,
     title: str = "Pairwise permutation tests",
     alpha: float = 0.05,
     bonferroni: bool = True,
-    exp_order: list[str] | None = None,
-    save_path: str | None = None,
-    figsize: tuple | None = None,
+    exp_order: Optional[List[str]] = None,
+    save_path: Optional[str] = None,
+    figsize: Optional[Tuple[float, float]] = None,
 ):
     """
     Plot a symmetric heatmap of pairwise permutation test results.
@@ -334,3 +411,101 @@ def plot_permutation_heatmap(
     plt.show()
 
     return fig
+
+
+
+
+# ----------------------------------------------------------------------
+# Word-level coverage utilities
+# ----------------------------------------------------------------------
+def compute_word_coverage_for_experiment(exp_row, test_df):
+    """
+    Compute per-word TP / FP counts per country for a single experiment row.
+
+    Returns a DataFrame with columns:
+        ['exp_id','domain','cls','country','word','tp','fp','total']
+    """
+    domain = exp_row["Domain"]
+    exp_id = exp_row["ID"]
+    classes = DOMAIN_CLASSES_CORR[domain]
+
+    # keywords dict: {'whitelist_hospital': {country: [w1, w2, ...]}, ...}
+    kw_dict = exp_row["Parameters"]["keywords"]
+
+    rows = []
+
+    for cls in classes:
+        whitelist_key = f"whitelist_{cls}"
+        if whitelist_key not in kw_dict:
+            continue
+
+        country_to_words = kw_dict[whitelist_key]  # {country: [words]}
+
+        for country, words in country_to_words.items():
+            if not words:
+                continue
+
+            df_country = test_df[test_df["country"] == country]
+            if df_country.empty:
+                continue
+
+            true_pos_mask = df_country[cls] == 1
+
+            # For each word, compute TP / FP in this country for this class
+            for word in words:
+                pattern = re.compile(rf"\b{re.escape(word)}\b", flags=re.IGNORECASE)
+                name_matches = df_country["names"].astype(str).apply(
+                    lambda x: bool(pattern.search(x))
+                )
+
+                tp = (name_matches & true_pos_mask).sum()
+                fp = (name_matches & ~true_pos_mask).sum()
+                total = tp + fp
+
+                if total == 0:
+                    continue
+
+                rows.append(
+                    {
+                        "exp_id": exp_id,
+                        "domain": domain,
+                        "cls": cls,
+                        "country": country,
+                        "word": word,
+                        "tp": int(tp),
+                        "fp": int(fp),
+                        "total": int(total),
+                    }
+                )
+
+    return pd.DataFrame(rows)
+
+
+def build_word_coverage_table(experiments_df, tests, exp_ids_of_interest):
+    """
+    Build a coverage_df table for the selected experiments, matching the shape
+    previously created in the notebook.
+    """
+    all_coverage = []
+
+    rule_idf_exps = experiments_df[
+        (experiments_df["Technique"] == "rules")
+        & (experiments_df["Method"] == "idf_best")
+        & (experiments_df["ID"].isin(exp_ids_of_interest))
+    ].reset_index(drop=True)
+
+    for _, exp_row in rule_idf_exps.iterrows():
+        domain = exp_row["Domain"]
+        if domain not in tests:
+            raise ValueError(
+                f"`tests` dict with key '{domain}' not found. "
+                f"Make sure you have something like tests['{domain}'] defined."
+            )
+        test_df = tests[domain]
+        cov_df = compute_word_coverage_for_experiment(exp_row, test_df)
+        all_coverage.append(cov_df)
+
+    if not all_coverage:
+        return pd.DataFrame()
+
+    return pd.concat(all_coverage, ignore_index=True)
