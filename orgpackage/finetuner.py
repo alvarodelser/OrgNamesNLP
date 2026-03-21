@@ -35,23 +35,6 @@ from transformers import AutoModel, AutoTokenizer
 from orgpackage.aux import load_dataset
 
 # ---------------------------------------------------------------------------
-# hyperparameters
-# ---------------------------------------------------------------------------
-OUTPUT_DIR = "results/finetuned_me5"
-MODEL_NAME = "intfloat/multilingual-e5-base"
-EPOCHS = 20
-BATCH_SIZE = 64
-LR = 2e-5
-TEMPERATURE = 0.07
-TRAIN_RATIO = 0.8
-MAX_LENGTH = 128
-PATIENCE = 3
-SEED = 42
-SAVE_EPOCHS = True
-DRY_RUN = False
-
-
-# ---------------------------------------------------------------------------
 # Label columns (multi-label, binary)
 # ---------------------------------------------------------------------------
 LABEL_COLS: List[str] = [
@@ -278,14 +261,15 @@ class MultiLabelSupConLoss(nn.Module):
 # 5. Data loading
 # ===========================================================================
 
-def load_data() -> pd.DataFrame:
+def prepare_finetuning_data(df: pd.DataFrame, label_cols: List[str] = LABEL_COLS) -> pd.DataFrame:
     """
-    Load the enriched dataset using orgpackage.aux.load_dataset().
+    Ensure required label columns exist, enforce numeric types,
+    and drop non-usable rows (missing names).
     """
-    df = load_dataset()
+    df = df.copy()
     
     # Ensure label columns exist (default 0 if missing)
-    for col in LABEL_COLS:
+    for col in label_cols:
         if col not in df.columns:
             df[col] = 0
         else:
@@ -295,8 +279,8 @@ def load_data() -> pd.DataFrame:
     df = df.dropna(subset=["names"])
     df["names"] = df["names"].astype(str)
 
-    print(f"[finetuner] Loaded {len(df):,} rows.")
-    pos_counts = {c: int(df[c].sum()) for c in LABEL_COLS}
+    print(f"[finetuner] Data prepared. Total rows: {len(df):,}")
+    pos_counts = {c: int(df[c].sum()) for c in label_cols}
     print(f"[finetuner] Label counts: {pos_counts}")
     return df
 
@@ -305,13 +289,14 @@ def train_val_split(
     df: pd.DataFrame,
     train_ratio: float = 0.8,
     seed: int = 42,
+    label_cols: List[str] = LABEL_COLS,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Global 80/20 stratified split.  Stratification key is the bitmask of
     active label columns so class proportions are preserved.
     """
     df = df.copy()
-    df["_strat_key"] = df[LABEL_COLS].apply(
+    df["_strat_key"] = df[label_cols].apply(
         lambda row: "".join(str(int(v)) for v in row), axis=1
     )
     train_parts, val_parts = [], []
@@ -360,29 +345,37 @@ def compute_val_loss(
 # 7. Training loop
 # ===========================================================================
 
-def train() -> None:
+def train(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    output_dir: str = "results/finetuned_me5",
+    model_name: str = "intfloat/multilingual-e5-base",
+    epochs: int = 20,
+    batch_size: int = 64,
+    lr: float = 2e-5,
+    temperature: float = 0.07,
+    max_length: int = 128,
+    patience: int = 3,
+    seed: int = 42,
+    save_epochs: bool = True,
+) -> None:
+    """
+    Orchestrate finetuning of mE5-base using Multi-label SupCon Loss.
+    """
     # ── Reproducibility ───────────────────────────────────────────────────
-    random.seed(SEED)
-    np.random.seed(SEED)
-    torch.manual_seed(SEED)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[finetuner] Device: {device}")
-
-    # ── Load data ─────────────────────────────────────────────────────────
-    df = load_data()
-
-    if DRY_RUN:
-        df = df.sample(min(500, len(df)), random_state=SEED).reset_index(drop=True)
-        print(f"[finetuner] --dry_run: using {len(df)} rows.")
-
-    train_df, val_df = train_val_split(df, TRAIN_RATIO, SEED)
+    
     print(
         f"[finetuner] Train: {len(train_df):,} rows | Val: {len(val_df):,} rows"
     )
 
     # Where metrics get written (one JSON line per epoch)
-    log_path = os.path.join(OUTPUT_DIR, "training_log.jsonl")
+    log_path = os.path.join(output_dir, "training_log.jsonl")
     # Wipe any old log from a previous run
     if os.path.exists(log_path):
         os.remove(log_path)
@@ -391,25 +384,25 @@ def train() -> None:
     val_dataset = OrgNameDataset(val_df)
 
     # ── Model & tokenizer ─────────────────────────────────────────────────
-    print(f"[finetuner] Loading model: {MODEL_NAME}")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model = AutoModel.from_pretrained(MODEL_NAME).to(device)
+    print(f"[finetuner] Loading model: {model_name}")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name).to(device)
 
     # ── Loss, optimiser ───────────────────────────────────────────────────
-    criterion = MultiLabelSupConLoss(temperature=TEMPERATURE)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
+    criterion = MultiLabelSupConLoss(temperature=temperature)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
     # ── Training ──────────────────────────────────────────────────────────
     best_val_loss = float("inf")
     best_state: Optional[dict] = None
     patience_counter = 0
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(1, epochs + 1):
         model.train()
         sampler = BalancedBatchSampler(
-            train_dataset, batch_size=BATCH_SIZE, seed=SEED + epoch
+            train_dataset, batch_size=batch_size, seed=seed + epoch
         )
         total_train_loss = 0.0
         n_train_batches = 0
@@ -421,7 +414,7 @@ def train() -> None:
 
             optimizer.zero_grad()
             features = encode_batch(
-                model, tokenizer, texts, MAX_LENGTH, device
+                model, tokenizer, texts, max_length, device
             )
             loss = criterion(features, labels)
 
@@ -441,49 +434,36 @@ def train() -> None:
         # ── Validation ────────────────────────────────────────────────────
         avg_val_loss = compute_val_loss(
             model, tokenizer, val_dataset, criterion,
-            BATCH_SIZE, MAX_LENGTH, device,
+            batch_size, max_length, device,
         )
 
         is_best = avg_val_loss < best_val_loss - 1e-6
         print(
-            f"[epoch {epoch:03d}/{EPOCHS}]  "
+            f"[epoch {epoch:03d}/{epochs}]  "
             f"train_loss={avg_train_loss:.4f}  "
             f"val_loss={avg_val_loss:.4f}"
             + ("  ← best" if is_best else "")
         )
 
         # ── Per-epoch checkpoint ──────────────────────────────────────────
-        if SAVE_EPOCHS:
-            epoch_dir = os.path.join(OUTPUT_DIR, f"epoch_{epoch:03d}")
+        if save_epochs:
+            epoch_dir = os.path.join(output_dir, f"epoch_{epoch:03d}")
             os.makedirs(epoch_dir, exist_ok=True)
             model.save_pretrained(epoch_dir)
             tokenizer.save_pretrained(epoch_dir)
 
-        # ── Append metrics to JSONL log ───────────────────────────────────
-        with open(log_path, "a") as flog:
-            flog.write(
-                json.dumps(
-                    {
-                        "epoch": epoch,
-                        "train_loss": avg_train_loss,
-                        "val_loss": avg_val_loss,
-                        "is_best": is_best,
-                    }
-                )
-                + "\n"
-            )
-
-        # ── Early stopping / checkpoint ───────────────────────────────────
+        # ── Early stopping / best model tracking ──────────────────────────
         if is_best:
             best_val_loss = avg_val_loss
-            best_state = copy.deepcopy(model.state_dict())
+            # clone state dict directly on CPU
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             patience_counter = 0
         else:
             patience_counter += 1
-            if patience_counter >= PATIENCE:
+            if patience_counter >= patience:
                 print(
                     f"[finetuner] Early stopping triggered after {epoch} epochs "
-                    f"(patience={PATIENCE})."
+                    f"(patience={patience})."
                 )
                 break
 
@@ -491,10 +471,7 @@ def train() -> None:
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    model.save_pretrained(OUTPUT_DIR)
-    tokenizer.save_pretrained(OUTPUT_DIR)
-    print(f"[finetuner] Model saved to: {OUTPUT_DIR}")
+    model.save_pretrained(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    print(f"[finetuner] Model saved to: {output_dir}")
     print(f"[finetuner] Best validation loss: {best_val_loss:.4f}")
-
-if __name__ == "__main__":
-    train()
