@@ -32,6 +32,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 from transformers import AutoModel, AutoTokenizer
+from orgpackage.aux import load_dataset
+
+# ---------------------------------------------------------------------------
+# hyperparameters
+# ---------------------------------------------------------------------------
+OUTPUT_DIR = "results/finetuned_me5"
+MODEL_NAME = "intfloat/multilingual-e5-base"
+EPOCHS = 20
+BATCH_SIZE = 64
+LR = 2e-5
+TEMPERATURE = 0.07
+TRAIN_RATIO = 0.8
+MAX_LENGTH = 128
+PATIENCE = 3
+SEED = 42
+SAVE_EPOCHS = True
+DRY_RUN = False
+
 
 # ---------------------------------------------------------------------------
 # Label columns (multi-label, binary)
@@ -260,38 +278,12 @@ class MultiLabelSupConLoss(nn.Module):
 # 5. Data loading
 # ===========================================================================
 
-def load_data(data_path: str) -> pd.DataFrame:
+def load_data() -> pd.DataFrame:
     """
-    Load the enriched dataset.  Tries the full aux.load_dataset() first
-    (which merges tokenized/decomposed CSVs); falls back to reading the
-    main CSV directly if supplementary files are missing.
+    Load the enriched dataset using orgpackage.aux.load_dataset().
     """
-    try:
-        # Resolve paths relative to data_path so the function works from
-        # any working directory.
-        data_dir = os.path.dirname(os.path.abspath(data_path))
-        results_dir = os.path.join(os.path.dirname(data_dir), "results")
-        token_file = os.path.join(results_dir, "tokenized_names.csv")
-        decomp_file = os.path.join(results_dir, "decomposed_names.csv")
-
-        if os.path.exists(token_file) and os.path.exists(decomp_file):
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from orgpackage.aux import load_dataset as _load
-            df = _load(data_path, token_file, decomp_file)
-        else:
-            raise FileNotFoundError("Supplementary files not found, using plain CSV.")
-    except Exception as e:
-        print(f"[finetuner] Falling back to plain CSV load: {e}")
-        df = pd.read_csv(data_path)
-        # Parse list columns if stored as strings
-        for col in ("class_ids", "classes"):
-            if col in df.columns:
-                df[col] = df[col].apply(
-                    lambda x: ast.literal_eval(x)
-                    if isinstance(x, str)
-                    else x
-                )
-
+    df = load_dataset()
+    
     # Ensure label columns exist (default 0 if missing)
     for col in LABEL_COLS:
         if col not in df.columns:
@@ -368,29 +360,29 @@ def compute_val_loss(
 # 7. Training loop
 # ===========================================================================
 
-def train(args: argparse.Namespace) -> None:
+def train() -> None:
     # ── Reproducibility ───────────────────────────────────────────────────
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[finetuner] Device: {device}")
 
     # ── Load data ─────────────────────────────────────────────────────────
-    df = load_data(args.data_path)
+    df = load_data()
 
-    if args.dry_run:
-        df = df.sample(min(500, len(df)), random_state=args.seed).reset_index(drop=True)
+    if DRY_RUN:
+        df = df.sample(min(500, len(df)), random_state=SEED).reset_index(drop=True)
         print(f"[finetuner] --dry_run: using {len(df)} rows.")
 
-    train_df, val_df = train_val_split(df, args.train_ratio, args.seed)
+    train_df, val_df = train_val_split(df, TRAIN_RATIO, SEED)
     print(
         f"[finetuner] Train: {len(train_df):,} rows | Val: {len(val_df):,} rows"
     )
 
     # Where metrics get written (one JSON line per epoch)
-    log_path = os.path.join(args.output_dir, "training_log.jsonl")
+    log_path = os.path.join(OUTPUT_DIR, "training_log.jsonl")
     # Wipe any old log from a previous run
     if os.path.exists(log_path):
         os.remove(log_path)
@@ -399,25 +391,25 @@ def train(args: argparse.Namespace) -> None:
     val_dataset = OrgNameDataset(val_df)
 
     # ── Model & tokenizer ─────────────────────────────────────────────────
-    print(f"[finetuner] Loading model: {args.model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    model = AutoModel.from_pretrained(args.model_name).to(device)
+    print(f"[finetuner] Loading model: {MODEL_NAME}")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModel.from_pretrained(MODEL_NAME).to(device)
 
     # ── Loss, optimiser ───────────────────────────────────────────────────
-    criterion = MultiLabelSupConLoss(temperature=args.temperature)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    criterion = MultiLabelSupConLoss(temperature=TEMPERATURE)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
 
     # ── Training ──────────────────────────────────────────────────────────
     best_val_loss = float("inf")
     best_state: Optional[dict] = None
     patience_counter = 0
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(1, EPOCHS + 1):
         model.train()
         sampler = BalancedBatchSampler(
-            train_dataset, batch_size=args.batch_size, seed=args.seed + epoch
+            train_dataset, batch_size=BATCH_SIZE, seed=SEED + epoch
         )
         total_train_loss = 0.0
         n_train_batches = 0
@@ -429,7 +421,7 @@ def train(args: argparse.Namespace) -> None:
 
             optimizer.zero_grad()
             features = encode_batch(
-                model, tokenizer, texts, args.max_length, device
+                model, tokenizer, texts, MAX_LENGTH, device
             )
             loss = criterion(features, labels)
 
@@ -449,20 +441,20 @@ def train(args: argparse.Namespace) -> None:
         # ── Validation ────────────────────────────────────────────────────
         avg_val_loss = compute_val_loss(
             model, tokenizer, val_dataset, criterion,
-            args.batch_size, args.max_length, device,
+            BATCH_SIZE, MAX_LENGTH, device,
         )
 
         is_best = avg_val_loss < best_val_loss - 1e-6
         print(
-            f"[epoch {epoch:03d}/{args.epochs}]  "
+            f"[epoch {epoch:03d}/{EPOCHS}]  "
             f"train_loss={avg_train_loss:.4f}  "
             f"val_loss={avg_val_loss:.4f}"
             + ("  ← best" if is_best else "")
         )
 
         # ── Per-epoch checkpoint ──────────────────────────────────────────
-        if args.save_epochs:
-            epoch_dir = os.path.join(args.output_dir, f"epoch_{epoch:03d}")
+        if SAVE_EPOCHS:
+            epoch_dir = os.path.join(OUTPUT_DIR, f"epoch_{epoch:03d}")
             os.makedirs(epoch_dir, exist_ok=True)
             model.save_pretrained(epoch_dir)
             tokenizer.save_pretrained(epoch_dir)
@@ -488,10 +480,10 @@ def train(args: argparse.Namespace) -> None:
             patience_counter = 0
         else:
             patience_counter += 1
-            if patience_counter >= args.patience:
+            if patience_counter >= PATIENCE:
                 print(
                     f"[finetuner] Early stopping triggered after {epoch} epochs "
-                    f"(patience={args.patience})."
+                    f"(patience={PATIENCE})."
                 )
                 break
 
@@ -499,89 +491,10 @@ def train(args: argparse.Namespace) -> None:
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    model.save_pretrained(args.output_dir)
-    tokenizer.save_pretrained(args.output_dir)
-    print(f"[finetuner] Model saved to: {args.output_dir}")
+    model.save_pretrained(OUTPUT_DIR)
+    tokenizer.save_pretrained(OUTPUT_DIR)
+    print(f"[finetuner] Model saved to: {OUTPUT_DIR}")
     print(f"[finetuner] Best validation loss: {best_val_loss:.4f}")
 
-
-# ===========================================================================
-# 8. CLI
-# ===========================================================================
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Fine-tune mE5-base on org names with multi-label SupCon loss."
-    )
-    parser.add_argument(
-        "--data_path",
-        default="data/wikidata_enriched_dataset.csv",
-        help="Path to the enriched organisation dataset CSV.",
-    )
-    parser.add_argument(
-        "--output_dir",
-        default="results/finetuned_me5",
-        help="Directory to save the fine-tuned HuggingFace model.",
-    )
-    parser.add_argument(
-        "--model_name",
-        default="intfloat/multilingual-e5-base",
-        help="HuggingFace model identifier.",
-    )
-    parser.add_argument("--epochs", type=int, default=20, help="Max training epochs.")
-    parser.add_argument(
-        "--batch_size", type=int, default=64, help="Batch size."
-    )
-    parser.add_argument(
-        "--lr", type=float, default=2e-5, help="AdamW learning rate."
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.07,
-        help="SupCon temperature τ.",
-    )
-    parser.add_argument(
-        "--train_ratio",
-        type=float,
-        default=0.8,
-        help="Fraction of data used for training (rest → validation).",
-    )
-    parser.add_argument(
-        "--max_length",
-        type=int,
-        default=128,
-        help="Tokenizer maximum sequence length.",
-    )
-    parser.add_argument(
-        "--patience",
-        type=int,
-        default=3,
-        help="Early-stopping patience (epochs without val-loss improvement).",
-    )
-    parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for reproducibility."
-    )
-    parser.add_argument(
-        "--save_epochs",
-        action="store_true",
-        default=True,
-        help="Save a HF checkpoint after every epoch (default: True).",
-    )
-    parser.add_argument(
-        "--no_save_epochs",
-        dest="save_epochs",
-        action="store_false",
-        help="Disable per-epoch checkpoint saving.",
-    )
-    parser.add_argument(
-        "--dry_run",
-        action="store_true",
-        help="Subsample 500 rows for a quick smoke-test.",
-    )
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
-    args = parse_args()
-    train(args)
+    train()
