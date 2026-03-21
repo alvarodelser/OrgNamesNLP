@@ -610,19 +610,9 @@ def _render_diagnostics(
                 pts[:, 0], pts[:, 1],
                 color=color,
                 alpha=alpha,
-                s=30,
+                s=10,
                 zorder=2 + epoch_i,
                 edgecolors="none",
-            )
-
-        # Mark final epoch positions with a bold dot + label
-        if n_epochs > 0:
-            last = projections[-1][idxs]
-            cx, cy = last[:, 0].mean(), last[:, 1].mean()
-            ax_proj.text(
-                cx, cy, cls.replace("_", "\n"),
-                fontsize=6, ha="center", va="center",
-                color=color, fontweight="bold", zorder=10,
             )
 
     # Epoch gradient legend stub
@@ -727,6 +717,7 @@ def watch_training_diagnostics(
     processed_epochs: set[int] = set()
     embeddings_per_epoch: list[np.ndarray] = []
     losses: list[dict] = []
+    prev_loss_len = -1
 
     log_path = os.path.join(checkpoint_dir, "training_log.jsonl")
 
@@ -782,7 +773,9 @@ def watch_training_diagnostics(
                     print(f"[diagnostics] Could not load epoch {epoch_num}: {e}")
 
         # ── Refresh plot if anything new ─────────────────────────────────
-        if new_epochs_found and len(embeddings_per_epoch) >= 1:
+        log_changed = len(current_losses) != prev_loss_len
+        if (new_epochs_found or log_changed) and len(embeddings_per_epoch) >= 1:
+            prev_loss_len = len(current_losses)
             losses = current_losses or [
                 {"epoch": i + 1, "train_loss": 0.0, "val_loss": 0.0, "is_best": False}
                 for i in range(len(embeddings_per_epoch))
