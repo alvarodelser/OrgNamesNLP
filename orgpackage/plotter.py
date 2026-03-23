@@ -596,13 +596,19 @@ def _render_diagnostics(
         idxs = [i for i, c in enumerate(probe_classes) if c == cls]
         color = _CLASS_COLORS.get(cls, "black")
 
-        # Draw trace lines progressively fading up to the latest epoch
+        # Draw 'x' markers progressively fading up to the latest epoch
         for pt_idx in idxs:
-            for e in range(1, n_epochs):
-                x_seg = [projections[e - 1][pt_idx, 0], projections[e][pt_idx, 0]]
-                y_seg = [projections[e - 1][pt_idx, 1], projections[e][pt_idx, 1]]
-                alpha_seg = 0.1 + 0.8 * (e / max(n_epochs - 1, 1))
-                ax_proj.plot(x_seg, y_seg, color=color, alpha=alpha_seg, linewidth=1.0, zorder=1)
+            for e in range(n_epochs - 1):
+                alpha_val = 0.1 + 0.8 * ((e + 1) / max(n_epochs - 1, 1))
+                ax_proj.scatter(
+                    projections[e][pt_idx, 0],
+                    projections[e][pt_idx, 1],
+                    color=color,
+                    marker="x",
+                    s=15,
+                    alpha=alpha_val,
+                    zorder=1,
+                )
 
             # Only plot the point for the LATEST epoch
             if n_epochs > 0:
@@ -610,6 +616,7 @@ def _render_diagnostics(
                     projections[-1][pt_idx, 0],
                     projections[-1][pt_idx, 1],
                     color=color,
+                    marker="o",
                     s=15,
                     zorder=10,
                     edgecolors="none",

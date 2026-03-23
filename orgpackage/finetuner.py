@@ -460,6 +460,15 @@ def train(
             + ("  ← best" if is_best else "")
         )
 
+        log_dict = {
+            "epoch": epoch,
+            "train_loss": avg_train_loss,
+            "val_loss": avg_val_loss,
+            "is_best": is_best
+        }
+        with open(log_path, "a") as f:
+            f.write(json.dumps(log_dict) + "\n")
+
         # ── Per-epoch checkpoint ──────────────────────────────────────────
         if save_epochs:
             epoch_dir = os.path.join(output_dir, f"epoch_{epoch:03d}")
