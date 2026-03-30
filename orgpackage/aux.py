@@ -7,6 +7,22 @@ import numpy as np
 import random
 import hashlib
 
+def safe_eval(s):
+    """Safely evaluate a string, with fallback for NumPy array representations."""
+    if not isinstance(s, str):
+        return s
+    try:
+        return ast.literal_eval(s)
+    except (ValueError, SyntaxError):
+        try:
+            # Handle NumPy array representations like array([...]) or np.array([...])
+            import numpy as np
+            # Replace array( with np.array( for consistency
+            modified_str = s.replace('array(', 'np.array(')
+            return eval(modified_str, {'np': np, '__builtins__': {}})
+        except Exception:
+            return s
+
 
 def log_progress(i, total, task, step_pct=10):
     """Print a log line at the start and at each *step_pct* % milestone."""
@@ -58,29 +74,8 @@ def get_id(experiments, domain, technique, method):
 def load_experiments(experiments_path = "./results/experiments.csv"):
     experiments = pd.read_csv(experiments_path)
     
-    # Function to safely parse parameters with NumPy arrays
-    def safe_parse(param_str):
-        try:
-            # First try a direct literal_eval
-            return ast.literal_eval(param_str)
-        except (ValueError, SyntaxError) as e:
-            # If that fails, it might be due to NumPy arrays in the string
-            try:
-                # Replace numpy array representation to make it compatible with literal_eval
-                modified_str = param_str.replace('array(', 'np.array(')
-                
-                # Execute with numpy available in namespace
-                import numpy as np
-                result = eval(modified_str, {'np': np})
-                return result
-            except Exception as e2:
-                print(f"Error parsing parameter: {param_str[:200]}...")
-                print(f"Error details: {e2}")
-                # Return an empty dict as fallback
-                return {}
-    
     # Apply the safe parsing function
-    experiments['Parameters'] = experiments['Parameters'].apply(safe_parse)
+    experiments['Parameters'] = experiments['Parameters'].apply(safe_eval)
     return experiments
 
 def load_embeddings(file_path):
@@ -109,10 +104,10 @@ def load_embeddings(file_path):
         print(f"Warning: No embedding columns found in {file_path}")
         return embeddings_df
 
-    # Convert stringified embeddings to lists of floats
+    # Convert stringified embeddings to labels/arrays
     for col in embedding_columns:
         embeddings_df[col] = embeddings_df[col].apply(
-            lambda x: np.array(ast.literal_eval(x)) if pd.notna(x) and isinstance(x, str) else None
+            lambda x: np.array(safe_eval(x)) if pd.notna(x) else None
         )
     
     return embeddings_df
