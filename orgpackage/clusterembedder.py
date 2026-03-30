@@ -157,9 +157,10 @@ def embedder(df, model_key, euhub=False):
         print(f"All embeddings for {model_key} already exist.")
         return
 
-    print(f"Loading model: {model_key}")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    print(f"Loading model: {model_key} on device: {device}")
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModel.from_pretrained(model_name, trust_remote_code=True).to(device)
 
     print(f"Generating embeddings for {model_key} starting from index {start_idx}")
     names = df_saved['names'].tolist()
@@ -170,7 +171,7 @@ def embedder(df, model_key, euhub=False):
         log_progress(batch_i, total_batches, f"Generating embeddings for {model_key}")
         batch_names = names[i:i + batch_size]  # Batch processing
         batch_dict = tokenizer(batch_names, max_length=max_length, padding=True, truncation=True,
-                               return_tensors='pt')
+        batch_dict = {k: v.to(device) for k, v in batch_dict.items()}
         # Calculate batch embeddings
         with torch.no_grad():  # Disable gradient computation
             outputs = model(**batch_dict)
@@ -192,7 +193,10 @@ def embedder(df, model_key, euhub=False):
     # Freeing memory
     del model
     del tokenizer
-    torch.mps.empty_cache()  # Free MPS memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif torch.backends.mps.is_available():
+        torch.mps.empty_cache()
     gc.collect()
 
 
@@ -223,11 +227,13 @@ def embed_prototypes(prototypes, model_key, language="en"):
         model_name = EMB_MODELS[model_key]["model_name"]
         max_length = EMB_MODELS[model_key]["max_length"]
 
+        device = torch.device("cuda:1" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
         # Load model/tokenizer
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+        model = AutoModel.from_pretrained(model_name, trust_remote_code=True).to(device)
 
         batch_dict = tokenizer(prototypes, max_length=max_length, padding=True, truncation=True, return_tensors="pt")
+        batch_dict = {k: v.to(device) for k, v in batch_dict.items()}
 
         with torch.no_grad():
             outputs = model(**batch_dict)
@@ -239,7 +245,10 @@ def embed_prototypes(prototypes, model_key, language="en"):
         # Clean up
         del model
         del tokenizer
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif torch.backends.mps.is_available():
+            torch.mps.empty_cache()
         gc.collect()
-        torch.mps.empty_cache()
 
     return embeddings

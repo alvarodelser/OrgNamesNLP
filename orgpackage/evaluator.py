@@ -254,7 +254,7 @@ def evaluate_nli(tests, confidences_path="./results/nli_confidences.csv"):
                     test_df[col] = test_df["instance"].map(mapping)
         else:
             print(f"Loading model: {model_key}")
-            classifier = pipeline("zero-shot-classification", model=NLI_MODELS[model_key])
+            classifier = pipeline("zero-shot-classification", model=NLI_MODELS[model_key], device=1)
             exp = evaluate_nli_experiment(exp, test_df, classifier, prompt)
             _merge_columns_to_confidences(confidences, test_df, pred_cols + conf_cols)
             confidences.to_csv(confidences_path, index=False)

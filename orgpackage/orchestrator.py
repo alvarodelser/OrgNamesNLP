@@ -1,6 +1,7 @@
 import json
 import os
 import ast
+import pickle
 import numpy as np
 import pandas as pd
 from orgpackage.aux import log_progress
@@ -97,7 +98,7 @@ def nli_orchestrator(): # Generates the experiments for NLI
 
 ############################################################# EMBEDDIGS ######################################################
             ############## Cosine Similarity #################
-def similarity_orchestrator(trains, validations, euhub=False):
+def similarity_orchestrator(trains, validations, euhub=False, models=None):
     file_path = "./results/experiments.csv"
     embeddings_base_path='./results/embeddings/'
     if not os.path.exists(file_path):
@@ -110,7 +111,16 @@ def similarity_orchestrator(trains, validations, euhub=False):
     labels_path = os.path.join(embeddings_base_path, 'label_embeddings.csv')
     label_embeddings = load_embeddings(file_path=labels_path)
 
-    for model in EMB_MODELS.keys(): # models are first loop as they are heavy to load
+    # Resolve models to iterate
+    if models is None:
+        models_to_use = EMB_MODELS.keys()
+    else:
+        models_to_use = [m for m in models if m in EMB_MODELS]
+        if not models_to_use:
+            print("Warning: No valid models specified. Using all models.")
+            models_to_use = EMB_MODELS.keys()
+
+    for model in models_to_use: # models are first loop as they are heavy to load
         # Determine embeddings paths based on dataset type
         if euhub:
             embeddings_path = os.path.join(embeddings_base_path, f"euhub_{model}_embeddings.csv") 
@@ -312,10 +322,34 @@ def classifier_orchestrator(trains, validations, euhub=False, overwrite=False, m
                     val_new_row = pd.DataFrame([[id, domain, technique, method, params, None, None, None]],
                                             columns=["ID", "Domain", "Technique", "Method", "Parameters", "Accuracy", "Recall", "F1"])
                     validation_exps = pd.concat([validation_exps, val_new_row], ignore_index=True)
-                
+
+                # ---- Checkpointing setup ----
+                checkpoint_dir = './results/checkpoints'
+                os.makedirs(checkpoint_dir, exist_ok=True)
+                safe_model = model.replace('/', '_')
+                checkpoint_path = os.path.join(
+                    checkpoint_dir, f'clf_{safe_model}_{domain}_{classifier}.pkl'
+                )
+                # completed_results: maps row-index -> (Accuracy, Recall, F1, params)
+                completed_results = {}
+                if os.path.exists(checkpoint_path):
+                    print(f"  [Checkpoint] Resuming {domain}/{classifier}/{model} from {checkpoint_path}")
+                    with open(checkpoint_path, 'rb') as _f:
+                        completed_results = pickle.load(_f)
+
                 # Train models for all configurations
                 total_configs = len(validation_exps)
                 for iter_i, (idx, exp) in enumerate(validation_exps.iterrows()):
+                    # --- Resume from checkpoint if available ---
+                    if idx in completed_results:
+                        acc, rec, f1, params = completed_results[idx]
+                        validation_exps.at[idx, 'Accuracy'] = acc
+                        validation_exps.at[idx, 'Recall']   = rec
+                        validation_exps.at[idx, 'F1']        = f1
+                        validation_exps.at[idx, 'Parameters'] = params
+                        log_progress(iter_i, total_configs, f"[cached] {classifier}/{structure}")
+                        continue
+
                     log_progress(iter_i, total_configs, f"Training {classifier} for {structure}")
                     try:
                         trained_model = train_classifier(train, exp)
@@ -327,22 +361,30 @@ def classifier_orchestrator(trains, validations, euhub=False, overwrite=False, m
                         else:
                             clf_path = save_trained_model(trained_model, exp['ID'], params)
                             params["trained_classifier"] = clf_path
-                        
-                        exp = evaluate_classifier_experiment(exp, validation, trained_model) # We do not use the optimize_parameter function to not load all trained models
+
+                        exp = evaluate_classifier_experiment(exp, validation, trained_model)
                         validation_exps.at[idx, 'Accuracy'] = exp['Accuracy']
-                        validation_exps.at[idx, 'Recall'] = exp['Recall']
-                        validation_exps.at[idx, 'F1'] = exp['F1']
+                        validation_exps.at[idx, 'Recall']   = exp['Recall']
+                        validation_exps.at[idx, 'F1']        = exp['F1']
                         validation_exps.at[idx, 'Parameters'] = params
+
+                        # --- Save checkpoint after each successful config ---
+                        completed_results[idx] = (exp['Accuracy'], exp['Recall'], exp['F1'], params)
+                        with open(checkpoint_path, 'wb') as _f:
+                            pickle.dump(completed_results, _f)
 
                     except Exception as e:
                         print(f"Error training model for {domain}, structure {structure}, {classifier}: {e}")
-                        # Skip this experiment
                         validation_exps = validation_exps.drop(idx)
 
                 if not validation_exps.empty:
-                    best_exp_df = validation_exps.loc[[validation_exps['F1'].idxmax()]] 
+                    best_exp_df = validation_exps.loc[[validation_exps['F1'].idxmax()]]
                     experiments = pd.concat([experiments, best_exp_df], ignore_index=True)
                     experiments.to_csv(file_path, index=False)
+                    # Clean up checkpoint — combo fully done
+                    if os.path.exists(checkpoint_path):
+                        os.remove(checkpoint_path)
+                        print(f"  [Checkpoint] Cleared {checkpoint_path}")
                 else:
                     print(f"Warning: No valid experiments for {domain}, structure {structure}, {classifier}")
 

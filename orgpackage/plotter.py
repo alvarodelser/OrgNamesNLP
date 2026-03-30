@@ -718,7 +718,7 @@ def watch_training_diagnostics(
     fig, (ax_loss, ax_proj) = plt.subplots(1, 2, figsize=(14, 6))
     fig.tight_layout(pad=3.0)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     print(f"[diagnostics] Device: {device}")
 
     processed_epochs: set[int] = set()

@@ -382,7 +382,7 @@ def train(
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     print(f"[finetuner] Device: {device}")
     
     print(
