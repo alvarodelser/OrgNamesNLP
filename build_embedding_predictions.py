@@ -383,18 +383,19 @@ def main():
     )
     args = parser.parse_args()
 
-    print("Loading dataset …")
+    print("Loading dataset …", flush=True)
     data = load_dataset()
     tests = build_splits(data)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     for domain in args.domain:
-        print(f"\n{'='*60}")
-        print(f"  Domain: {domain.upper()}")
-        print(f"{'='*60}")
+        print(f"\n{'='*60}", flush=True)
+        print(f"  Domain: {domain.upper()}", flush=True)
+        print(f"{'='*60}", flush=True)
 
         test_df = tests[domain]
+
         pred_table = build_embedding_predictions(
             domain      = domain,
             test_df     = test_df,
