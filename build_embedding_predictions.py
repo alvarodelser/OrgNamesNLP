@@ -80,16 +80,20 @@ def _predict_similarity(df: pd.DataFrame, exp: pd.Series) -> dict[str, np.ndarra
     cosine-similarity experiment.
     """
     params        = exp["Parameters"]
+    classes       = DOMAIN_CLASSES_CORR[exp["Domain"]]
+    preds = {cls: np.zeros(len(df), dtype=int) for cls in classes}
+
+    if not isinstance(params, dict):
+        print(f"  WARNING: Parameters for {exp['ID']} is not a valid dictionary (possibly truncated in CSV). Skipping.")
+        return preds
+
     model         = params["model"]
     embedding_col = f"{model}_embedding"
     distance      = params["distance"]
     threshold     = 1.0 - distance
     prototypes    = params["prototypes"]
     structure     = params["structure"]
-    classes       = DOMAIN_CLASSES_CORR[exp["Domain"]]
     is_multiclass = structure == "2-multiclass"
-
-    preds = {cls: np.zeros(len(df), dtype=int) for cls in classes}
 
     for row_pos, (idx, row) in enumerate(df.iterrows()):
         x = _safe_array(row.get(embedding_col))
@@ -139,6 +143,7 @@ def _predict_similarity(df: pd.DataFrame, exp: pd.Series) -> dict[str, np.ndarra
     return preds
 
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Classifier prediction (loads trained model from path stored in Parameters)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -149,10 +154,17 @@ def _predict_classifier(df: pd.DataFrame, exp: pd.Series) -> dict[str, np.ndarra
     classifier-head experiment.  Loads the serialised sklearn model.
     """
     params        = exp["Parameters"]
+    classes       = DOMAIN_CLASSES_CORR[exp["Domain"]]
+    preds = {cls: np.zeros(len(df), dtype=int) for cls in classes}
+
+    if not isinstance(params, dict):
+        print(f"  WARNING: Parameters for {exp['ID']} is not a valid dictionary. Skipping.")
+        return preds
+
     model         = params["model"]
     embedding_col = f"{model}_embedding"
     structure     = params.get("structure", "flat")
-    classes       = DOMAIN_CLASSES_CORR[exp["Domain"]]
+
 
     # Build X, keeping track of which rows have valid embeddings
     X, valid_pos = [], []
@@ -267,7 +279,19 @@ def build_embedding_predictions(
     result = test_df[base_cols].reset_index(drop=True).copy()
 
     # Group by model so we load each embedding file only once
-    domain_exps["_model"] = domain_exps["Parameters"].apply(lambda p: p.get("model", ""))
+    # Extract model from Parameters correctly
+    def _extract_model(p):
+        if isinstance(p, dict):
+            return p.get("model", "")
+        elif isinstance(p, str):
+            import re
+            m = re.search(r"'model':\s*'([^']+)'", p)
+            return m.group(1) if m else ""
+        return ""
+        
+    domain_exps["_model"] = domain_exps["Parameters"].apply(_extract_model)
+    # Filter out empty model rows that failed parsing
+    domain_exps = domain_exps[domain_exps["_model"] != ""]
     label_embeddings = None  # loaded lazily
 
     current_model = None
