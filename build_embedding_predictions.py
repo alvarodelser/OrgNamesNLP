@@ -291,6 +291,8 @@ def build_embedding_tables(
         print(f"\n  Loading embeddings for model: {model}")
         try:
             instance_embs = _load_instance_embeddings(model)
+            # Deduplicate instances to prevent merge explosion
+            instance_embs = instance_embs.drop_duplicates(subset=['instance'], keep='first')
         except FileNotFoundError as e:
             print(f"  SKIP — {e}")
             continue
@@ -326,6 +328,8 @@ def build_embedding_tables(
 
                 print("OK")
 
+            except ValueError as ve:
+                print(f"SKIP (Alignment Error) — {ve}")
             except Exception as e:
                 print(f"ERROR — {e}")
 
