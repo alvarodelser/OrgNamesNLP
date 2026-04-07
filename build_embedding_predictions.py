@@ -246,20 +246,19 @@ def _predict_classifier(df: pd.DataFrame, exp: pd.Series) -> dict[str, np.ndarra
 # Main builder
 # ──────────────────────────────────────────────────────────────────────────────
 
-def build_embedding_predictions(
+def build_embedding_tables(
     domain: str,
     test_df: pd.DataFrame,
     experiments_path: str = "./results/experiments.csv",
     techniques: list[str] = ("similarity", "classifier"),
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Build a per-instance prediction table for all embedding experiments
-    of the given domain.
+    Build per-instance prediction and correctness tables for all embedding
+    experiments of the given domain.
 
     Returns
     -------
-    DataFrame  rows=instances, columns={exp_id}_{cls}, values 0/1
-    Also includes ground-truth columns for each class and the 'instance' key.
+    (df_classification, df_correctness)
     """
     exps = load_experiments(experiments_path)
     domain_exps = exps[
@@ -270,32 +269,23 @@ def build_embedding_predictions(
 
     if domain_exps.empty:
         print(f"No embedding experiments found for domain={domain!r}")
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
     classes = DOMAIN_CLASSES_CORR[domain]
 
-    # Base table: instance + ground-truth labels
+    # Base attributes + ground truth labels
     base_cols = ["instance", "names", "country"] + classes
-    result = test_df[base_cols].reset_index(drop=True).copy()
+    df_clf = test_df[base_cols].reset_index(drop=True).copy()
+    df_corr = test_df[base_cols].reset_index(drop=True).copy()
 
-    # Group by model so we load each embedding file only once
-    # Extract model from Parameters correctly
+    # Group by model for efficiency
     def _extract_model(p):
         if isinstance(p, dict):
             return p.get("model", "")
-        elif isinstance(p, str):
-            import re
-            m = re.search(r"'model':\s*'([^']+)'", p)
-            return m.group(1) if m else ""
         return ""
         
     domain_exps["_model"] = domain_exps["Parameters"].apply(_extract_model)
-    # Filter out empty model rows that failed parsing
     domain_exps = domain_exps[domain_exps["_model"] != ""]
-    label_embeddings = None  # loaded lazily
-
-    current_model = None
-    merged_df = None  # test_df with embedding column attached
 
     for model, group in domain_exps.groupby("_model"):
         print(f"\n  Loading embeddings for model: {model}")
@@ -315,31 +305,31 @@ def build_embedding_predictions(
         for _, exp in group.iterrows():
             method = exp["Method"]
             exp_id = exp["ID"]
-            print(f"    Predicting [{method}] {exp_id} …", end=" ", flush=True)
+            print(f"    Processing [{method}] {exp_id} …", end=" ", flush=True)
 
             try:
                 if method == "similarity":
-                    # Similarity needs label embeddings for 0-shot prototypes
-                    # (already stored in Parameters['prototypes']) — no extra load needed
                     preds = _predict_similarity(merged, exp)
                 elif method == "classifier":
                     preds = _predict_classifier(merged, exp)
                 else:
-                    print("SKIP (unknown method)")
                     continue
 
+                # 1. Add columns to classification table
                 for cls in classes:
-                    col = f"{exp_id}_{cls}"
-                    result[col] = preds[cls]
+                    df_clf[f"{exp_id}_{cls}"] = preds[cls]
 
-                # Quick sanity check
-                total = sum(preds[cls].sum() for cls in classes)
-                print(f"OK  (total positives: {total})")
+                # 2. Add columns to correctness table (Exact Vector Match)
+                y_pred = np.stack([preds[cls] for cls in classes], axis=1)
+                y_true = df_clf[classes].values
+                df_corr[f"{exp_id}_correct"] = (y_pred == y_true).all(axis=1).astype(int)
+
+                print("OK")
 
             except Exception as e:
                 print(f"ERROR — {e}")
 
-    return result
+    return df_clf, df_corr
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -358,18 +348,18 @@ def build_splits(data):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Build per-instance prediction tables for embedding experiments"
+        description="Build per-instance classification and correctness tables for embedding experiments"
     )
     parser.add_argument(
         "--domain", nargs="+",
         default=["medical", "administrative", "education"],
-        help="Domains to process (default: all three)",
+        help="Domains to process",
     )
     parser.add_argument(
         "--technique", nargs="+",
         default=["similarity", "classifier"],
         choices=["similarity", "classifier"],
-        help="Which embedding method(s) to include (default: both)",
+        help="Embedding method(s) to include",
     )
     parser.add_argument(
         "--experiments",
@@ -379,7 +369,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         default="./results",
-        help="Directory to write output CSVs (default: ./results)",
+        help="Directory to write output CSVs",
     )
     args = parser.parse_args()
 
@@ -390,26 +380,31 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     for domain in args.domain:
-        print(f"\n{'='*60}", flush=True)
-        print(f"  Domain: {domain.upper()}", flush=True)
-        print(f"{'='*60}", flush=True)
+        print(f"\n{'='*60}")
+        print(f"  Domain: {domain.upper()}")
+        print(f"{'='*60}")
 
         test_df = tests[domain]
 
-        pred_table = build_embedding_predictions(
+        df_clf, df_corr = build_embedding_tables(
             domain      = domain,
             test_df     = test_df,
             experiments_path = args.experiments,
             techniques  = args.technique,
         )
 
-        if pred_table.empty:
-            print(f"  No results for {domain} — skipping.")
+        if df_clf.empty:
             continue
 
-        out_path = os.path.join(args.output_dir, f"embedding_predictions_{domain}.csv")
-        pred_table.to_csv(out_path, index=False)
-        print(f"\n  Saved → {out_path}  ({len(pred_table)} rows, {len(pred_table.columns)} columns)")
+        # Save Classification Table
+        clf_path = os.path.join(args.output_dir, f"embedding_classification_{domain}.csv")
+        df_clf.to_csv(clf_path, index=False)
+        print(f"  Classification saved → {clf_path}")
+
+        # Save Correctness Table
+        corr_path = os.path.join(args.output_dir, f"embedding_correctness_{domain}.csv")
+        df_corr.to_csv(corr_path, index=False)
+        print(f"  Correctness saved → {corr_path}")
 
 
 if __name__ == "__main__":
