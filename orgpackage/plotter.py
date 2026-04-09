@@ -455,13 +455,8 @@ def _render_diagnostics(
     ax_loss.legend(fontsize=8)
     ax_loss.grid(True, alpha=0.3)
 
-    # ── Right panel: 2-D embedding traces ────────────────────────────────
-    ax_proj.cla()
-
-    # Limit to first 8 epochs if more exist
+    # Limit PCA to first 8 epochs if more exist
     projections = projections[:8]
-    if losses:
-        losses = losses[:8]
     n_epochs = len(projections)
 
     unique_classes = list(dict.fromkeys(probe_classes))  # preserve order
@@ -519,7 +514,7 @@ def _render_diagnostics(
     ax_proj.legend(
         handles=legend_handles,
         fontsize=6,
-        loc="lower right",
+        loc="upper right",
         framealpha=0.7,
     )
     ax_proj.set_title(
@@ -682,13 +677,11 @@ def watch_training_diagnostics(
         log_changed = len(current_losses) != prev_loss_len
         if (new_epochs_found or log_changed) and len(embeddings_per_epoch) >= 1:
             prev_loss_len = len(current_losses)
-            losses = current_losses or [
+            # Embeddings are capped at 8, but losses show the full history
+            losses_trimmed = current_losses or [
                 {"epoch": i + 1, "train_loss": 0.0, "val_loss": 0.0, "is_best": False}
                 for i in range(len(embeddings_per_epoch))
             ]
-            # Only keep loss rows for epochs we've processed
-            n_proc = len(embeddings_per_epoch)
-            losses_trimmed = losses[:n_proc]
 
             projections = _project_2d(embeddings_per_epoch)
 
