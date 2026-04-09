@@ -281,7 +281,7 @@ def _parse_ollama_response(response_text, classes):
     """Extract class predictions from an Ollama response, stripping
     <think> blocks emitted by reasoning models."""
     import re, json as _json
-    cleaned = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL).strip()
+    cleaned = re.sub(r'<think>.*?(?:</think>|$)', '', response_text, flags=re.DOTALL).strip()
 
     json_match = re.search(r'\{[^}]+\}', cleaned)
     if json_match:
@@ -318,7 +318,7 @@ def ollama_classify(client, model, system_prompt, names, classes):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f'Classify: "{name}"'}
                 ],
-                options={"temperature": 0.0, "num_predict": 128}
+                options={"temperature": 0.0, "num_predict": 2048}
             )
             preds = _parse_ollama_response(response['message']['content'], classes)
         except Exception as e:

@@ -8,9 +8,16 @@ import random
 import hashlib
 
 def safe_eval(s):
-    """Safely evaluate a string, with fallback for NumPy array representations."""
+    """Safely evaluate a string, with fallback for JSON and NumPy array representations."""
     if not isinstance(s, str):
         return s
+
+    # Try JSON first (handles null, true, false)
+    try:
+        return json.loads(s)
+    except Exception:
+        pass
+
     try:
         return ast.literal_eval(s)
     except (ValueError, SyntaxError):
@@ -19,7 +26,7 @@ def safe_eval(s):
             import numpy as np
             # Replace array( with np.array( for consistency
             modified_str = s.replace('array(', 'np.array(')
-            return eval(modified_str, {'np': np, '__builtins__': {}})
+            return eval(modified_str, {'np': np, 'Ellipsis': Ellipsis, 'nan': np.nan, 'inf': np.inf, 'object': object, '__builtins__': {}})
         except Exception:
             return s
 
@@ -66,7 +73,19 @@ def load_dataset(datafile = './data/wikidata_enriched_dataset.csv', tokenfile = 
 
 def get_id(experiments, domain, technique, method):
     condition = (experiments['Domain'] == domain) & (experiments['Technique'] == technique) & (experiments['Method'] == method)
-    number = len(experiments.loc[condition, 'Parameters'])
+    existing_ids = experiments.loc[condition, 'ID']
+    
+    if existing_ids.empty:
+        number = 0
+    else:
+        try:
+            # Extract integers from suffixes like 'med-e-similarity-5'
+            numbers = [int(id_str.split('-')[-1]) for id_str in existing_ids]
+            number = max(numbers) + 1
+        except (ValueError, IndexError):
+            # Fallback if ID format is non-standard
+            number = len(existing_ids)
+            
     id = domain[:3] + '-' + technique[0] + '-' + method.split('_')[0] + '-' + str(number)
     print(f'Generating experiment {id}')
     return id

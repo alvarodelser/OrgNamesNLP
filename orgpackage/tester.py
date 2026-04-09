@@ -68,6 +68,57 @@ def build_correctness_table(
     return pd.DataFrame(correctness, index=df.set_index("instance").index)
 
 
+def build_continuous_correctness_table(
+    domain: str,
+    nli_df: pd.DataFrame,
+    experiment_prefix: str,
+) -> pd.DataFrame:
+    """
+    Build a per-entity continuous correctness table for NLI predictions.
+    
+    Returns a DataFrame: rows = instances (entity URIs),
+    columns = experiment IDs, values in [0, 1].
+    
+    A continuous score for each class is calculated as:
+      1 - abs(y_true - conf)
+    The instance score is the average of these class scores.
+    """
+    classes = DOMAIN_CLASSES_CORR[domain]
+    
+    exp_ids = set()
+    for col in nli_df.columns:
+        if col.startswith(experiment_prefix) and col.endswith("_conf"):
+            for cls in classes:
+                suffix = f"_{cls}_conf"
+                if col.endswith(suffix):
+                    exp_id = col[:-len(suffix)]
+                    exp_ids.add(exp_id)
+                    break
+    
+    exp_ids = sorted(list(exp_ids))
+    if not exp_ids:
+        raise ValueError(f"No experiments found matching prefix {experiment_prefix!r}")
+        
+    y_true = nli_df.set_index("instance")[classes].values
+    
+    correctness = {}
+    for exp_id in exp_ids:
+        conf_cols = [f"{exp_id}_{cls}_conf" for cls in classes]
+        missing = [c for c in conf_cols if c not in nli_df.columns]
+        if missing:
+            continue
+            
+        y_conf = nli_df.set_index("instance")[conf_cols].values
+        
+        # Soft accuracy: 1 - absolute error
+        scores = 1.0 - np.abs(y_true - y_conf)
+        instance_scores = scores.mean(axis=1)
+        
+        correctness[exp_id] = instance_scores
+        
+    return pd.DataFrame(correctness, index=nli_df.set_index("instance").index)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 2.  Permutation tests
 # ══════════════════════════════════════════════════════════════════════════════
@@ -348,12 +399,12 @@ def plot_permutation_heatmap(
 
     # ── plot ──────────────────────────────────────────────────────────────
     if figsize is None:
-        figsize = (max(8, n * 0.75), max(7, n * 0.75))
+        figsize = (7,7)
 
     fig, ax = plt.subplots(figsize=figsize)
 
     cmap = plt.cm.RdBu
-    cmap.set_bad(color="#e0e0e0")
+    cmap.set_bad(color="white")
     norm = mcolors.TwoSlopeNorm(vmin=-vlim, vcenter=0, vmax=vlim)
 
     im = ax.imshow(colour_data, cmap=cmap, norm=norm, aspect="auto")
@@ -361,20 +412,20 @@ def plot_permutation_heatmap(
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label(
         "Mean correctness diff (A − B)  [coloured only if significant]",
-        fontsize=9,
+        fontsize=12,
     )
 
     ax.set_xticks(range(n))
     ax.set_yticks(range(n))
-    ax.set_xticklabels(exp_order, rotation=45, ha="right", fontsize=8)
-    ax.set_yticklabels(exp_order, fontsize=8)
+    ax.set_xticklabels(exp_order, rotation=45, ha="right", fontsize=12)
+    ax.set_yticklabels(exp_order, fontsize=12)
 
     p_min = results["p_value"].min()
     for i in range(n):
         for j in range(n):
             if i == j:
                 ax.text(j, i, "—", ha="center", va="center",
-                        fontsize=7, color="#aaaaaa")
+                        fontsize=12, color="#aaaaaa")
                 continue
 
             p = p_vals[i, j]
@@ -385,7 +436,7 @@ def plot_permutation_heatmap(
             label = f"{d:+.2f}\n{p_str}"
 
             kwargs = dict(
-                ha="center", va="center", fontsize=6,
+                ha="center", va="center", fontsize=10,
                 color="black" if sig else "#999999",
                 fontweight="bold" if sig else "normal",
             )
@@ -395,15 +446,6 @@ def plot_permutation_heatmap(
                     ec="black", lw=0.7, alpha=0.6,
                 )
             ax.text(j, i, label, **kwargs)
-
-    corr_label = f"(Bonf.) " if bonferroni else ""
-    ax.set_title(
-        f"{title}\n"
-        f"Colour = mean correctness diff (row − col), "
-        f"blue = row better, red = col better\n"
-        f"Bold + box = significant  (α{corr_label}= {alpha_adj:.4f})",
-        fontsize=10, pad=12,
-    )
 
     plt.tight_layout()
     if save_path:

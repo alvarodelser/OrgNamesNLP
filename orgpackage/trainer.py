@@ -134,23 +134,23 @@ def build_few_shot_prompt(train_df, domain, classes):
             country_pos = positives[positives['country'] == country]
             if not country_pos.empty:
                 row = country_pos.sample(n=1, random_state=42).iloc[0]
-                label_str = ', '.join(c for c in classes if row[c] == 1)
-                examples.append(f'  "{row["names"]}" -> {label_str}')
+                json_vals = ', '.join([f'"{c}": {int(row[c] == 1)}' for c in classes])
+                examples.append(f'  "{row["names"]}" -> {{{json_vals}}}')
 
     negatives = train_df[(train_df[classes] == 0).all(axis=1)]
     for country in negatives['country'].unique():
         country_neg = negatives[negatives['country'] == country]
         if not country_neg.empty:
             row = country_neg.sample(n=1, random_state=42).iloc[0]
-            examples.append(f'  "{row["names"]}" -> none')
+            json_vals = ', '.join([f'"{c}": 0' for c in classes])
+            examples.append(f'  "{row["names"]}" -> {{{json_vals}}}')
 
     few_shot_block = '\n'.join(examples)
     class_list = ', '.join(classes)
     example_pairs = ', '.join([f'"{c}": 0' for c in classes])
     prompt = (
         f"Given an organization name, decide which of the following classes it belongs to: [{class_list}] or none.\n"
-        f"An organization can belong to multiple classes or none.\n"
-        f'If it belongs to none, output "none".\n\n'
+        f"An organization can belong to multiple classes or none.\n\n"
         f"Here are examples from different countries:\n"
         f"{few_shot_block}\n\n"
         f"Respond with ONLY a JSON object like: {{{example_pairs}}} "

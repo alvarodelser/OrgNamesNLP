@@ -1,7 +1,9 @@
+from __future__ import annotations
 import re
 import time
 import json
 import os
+from typing import Optional, Union, List, Dict
 import pandas as pd
 from orgpackage.config import DOMAIN_CLASSES_CORR, COUNTRY_DICT
 import numpy as np
@@ -108,9 +110,6 @@ def plot_word_recall_per_country(
     ax.set_xticklabels(countries, rotation=45, ha="right")
     ax.set_ylabel("Proportion")
     ax.set_xlabel("Country")
-    ax.set_title(
-        f"Word recall per country – {exp_id} / {cls} / '{word}'{title_suffix}"
-    )
     ax.yaxis.set_major_formatter(ticker.PercentFormatter(xmax=1.0))
     ax.legend()
 
@@ -137,8 +136,9 @@ def plot_word_coverage_all_countries(
     tests,
     exp_id,
     title_suffix="",
-    figsize=(10, 30),
+    figsize=(7, 25),
     top_k_words=None,
+    output_path: Optional[str] = None,
 ):
     """
     Small multiples version of the coverage plot.
@@ -154,6 +154,7 @@ def plot_word_coverage_all_countries(
     - Y-axis ticks of each subplot are the words.
     - Row labels (countries) appear vertically to the left of the leftmost plots.
     - Column labels (classes) are titles on the top row.
+    - output_path: If set, save the figure here (PNG/PDF).
     """
     df = coverage_df[coverage_df["exp_id"] == exp_id].copy()
     if df.empty:
@@ -168,261 +169,129 @@ def plot_word_coverage_all_countries(
     test_df = tests[domain]
 
     countries = sorted(df["country"].unique())
-    n_rows = len(countries)
     n_cols = len(classes)
 
-    if n_rows == 0 or n_cols == 0:
-        print("No countries or classes to plot.")
-        return
+    # Split countries into two halves
+    mid = (len(countries) + 1) // 2
+    halves = [
+        ("top", countries[:mid]),
+        ("bottom", countries[mid:])
+    ]
 
-    fig, axes = plt.subplots(
-        n_rows, n_cols, figsize=figsize, sharex=False, sharey=False
-    )
-
-    # Normalize axes to 2D array
-    if n_rows == 1 and n_cols == 1:
-        axes = np.array([[axes]])
-    elif n_rows == 1:
-        axes = axes.reshape(1, -1)
-    elif n_cols == 1:
-        axes = axes.reshape(-1, 1)
-
-    for row_idx, country in enumerate(countries):
-        df_country_test = test_df[test_df["country"] == country]
-        df_c = df[df["country"] == country]
-        country_meta = COUNTRY_DICT.get(country, {})
-        country_name = country_meta.get("country", country)
-
-        for col_idx, cls in enumerate(classes):
-            ax = axes[row_idx, col_idx]
-
-            df_cls = df_c[df_c["cls"] == cls].copy()
-            # Denominator: number of true-positive cases for this class in this country
-            df_country_cls = df_country_test[df_country_test[cls] == 1] if not df_country_test.empty else pd.DataFrame()
-            denom_pos = float(len(df_country_cls))
-
-            # If no test data or no positives for this (country, class), show N/A panel
-            if df_country_test.empty or denom_pos <= 0 or df_cls.empty:
-                ax.set_xlim(0, 1)
-                ax.set_ylim(0, 1)
-                ax.text(
-                    0.5,
-                    0.5,
-                    "N/A",
-                    ha="center",
-                    va="center",
-                    fontsize=8,
-                    color="gray",
-                )
-                ax.set_xticks([])
-                ax.set_yticks([])
-                # Still style spines consistently
-                for spine in ["top", "right"]:
-                    ax.spines[spine].set_visible(False)
-                if row_idx == 0:
-                    ax.set_title(cls, fontsize=11)
-                continue
-
-            df_cls = df_cls.sort_values("total", ascending=False)
-            if top_k_words is not None:
-                df_cls = df_cls.head(top_k_words)
-
-            if df_cls.empty:
-                ax.axis("off")
-                continue
-
-            y_positions = []
-            word_labels = []
-
-            max_x = denom_pos  # x-axis goes from 0 to n true organizations
-
-            # Vertical spacing and segment sizes derived from the y-range of this subplot
-            # so their appearance is consistent regardless of how many words are present.
-            y_scale = 1.0
-            n_words = len(df_cls)
-            y_range = max(1.0, n_words * y_scale)
-            fp_offset = 0.03 * y_range        # offset of red bar below black bar
-            fp_vert = 0.1 * y_range          # length of vertical segments
-
-            for y_idx, (_, row) in enumerate(df_cls.iterrows()):
-                y = y_idx * y_scale
-
-                tp_count = row["tp"]
-                fp_count = row["fp"]
-                if tp_count == 0 and fp_count == 0:
-                    continue
-
-                # --- BLACK BAR (true positives) ---
-                # Horizontal black line from 0 to TP for this word
-                end = tp_count
-                ax.hlines(
-                    y,
-                    0.0,
-                    end,
-                    colors="black",
-                    linewidth=1.2,
-                )
-
-                # Vertical black segment at the end of this bar, extending upward
-                # with length scaled to the y-range of the subplot.
-                if tp_count > 0:
-                    ax.vlines(
-                        end,
-                        y,
-                        y + fp_vert,
-                        colors="black",
-                        linewidth=1.0,
-                    )
-
-                # --- RED BAR (false positives) ---
-                if fp_count > 0:
-                    # Red bar slightly below the black bar; its offset scales with y-range.
-                    y_red = y - fp_offset
-
-                    if fp_count <= max_x:
-                        # FP bar fits inside the axis: draw as usual
-                        fp_end = fp_count
-                        ax.hlines(
-                            y_red,
-                            0.0,
-                            fp_end,
-                            colors="red",
-                            linewidth=1.2,
-                        )
-                        ax.vlines(
-                            fp_end,
-                            y_red,
-                            y_red - fp_vert,
-                            colors="red",
-                            linewidth=1,
-                        )
-                    else:
-                        # FP exceeds the visible x-range:
-                        # draw bar up to max_x, mark with an arrow, and annotate fp_count.
-                        fp_end = max_x
-                        ax.hlines(
-                            y_red,
-                            0.0,
-                            fp_end,
-                            colors="red",
-                            linewidth=1.2,
-                        )
-                        # Arrow marker at the right edge
-                        ax.annotate(
-                            "",
-                            xy=(max_x, y_red),
-                            xytext=(max_x - 0.02 * max_x, y_red),
-                            arrowprops=dict(
-                                arrowstyle="->",
-                                color="red",
-                                linewidth=1.0,
-                            ),
-                        )
-                        # Annotate actual FP count above the arrow
-                        ax.text(
-                            max_x,
-                            y_red + 0.6 * fp_vert,
-                            str(int(fp_count)),
-                            ha="right",
-                            va="bottom",
-                            fontsize=6,
-                            color="red",
-                        )
-
-                y_positions.append(y)
-                word_labels.append(row["word"])
-
-            if not y_positions:
-                ax.axis("off")
-                continue
-
-            # Add vertical breathing room above and below the bars
-            y_min = min(y_positions)
-            y_max = max(y_positions)
-            y_pad = 0.2 * y_range
-            ax.set_ylim(y_min - y_pad, y_max + y_pad)
-
-            # Y-axis: one row per word, tick labels are the words (no word annotations on the plot)
-            ax.set_yticks(y_positions)
-            ax.set_yticklabels(word_labels, fontsize=7)
-
-            # X-axis: 0 .. n true organizations, ticks derived from percentage positions
-            ax.set_xlim(0, max_x)
-            perc_fracs = np.linspace(0.0, 1.0, 6)  # 0%, 20%, ..., 100%
-            # Vertical dashed reference lines at percentage positions
-            for i, frac in enumerate(perc_fracs):
-                x_pos = frac * max_x
-                ax.axvline(
-                    x_pos,
-                    color="lightgray",
-                    linestyle="--",
-                    linewidth=0.5,
-                    zorder=0,
-                )
-                # On the first row of plots, label 20%, 40%, 60%, 80% above the axis
-                if row_idx == 0 and i in (1, 2, 3, 4):
-                    ax.text(
-                        x_pos,
-                        1.02,
-                        f"{int(frac * 100)}%",
-                        transform=ax.get_xaxis_transform(),
-                        ha="center",
-                        va="bottom",
-                        fontsize=6,
-                        color="gray",
-                    )
-
-            # X ticks: compute integer organization counts for each percentage,
-            # floor them, and place ticks exactly at that integer position.
-            tick_positions = []
-            tick_labels = []
-            seen_org_counts = set()
-            for frac in perc_fracs:
-                org_count = int(np.floor(frac * max_x))
-                if org_count < 0 or org_count in seen_org_counts:
-                    continue
-                seen_org_counts.add(org_count)
-                tick_positions.append(org_count)
-                tick_labels.append(str(org_count))
-            ax.set_xticks(tick_positions)
-            ax.set_xticklabels(tick_labels)
-
-            ax.tick_params(axis="x", labelsize=6, colors="gray")
-
-            # Keep only bottom and left spines
-            for spine in ["top", "right"]:
-                ax.spines[spine].set_visible(False)
-
-            # Column labels: classes as titles on top row
-            if row_idx == 0:
-                ax.set_title(cls, fontsize=11, y=1.2)
-
-        # Country labels: attach to the left-most subplot in the row
-        if n_cols == 1:
-            row_ax = axes[row_idx, 0]
-        else:
-            row_ax = axes[row_idx, 0]
-        # Country label: small, horizontally readable, and aligned along a common line
-        row_ax.set_ylabel(
-            country_name,
-            rotation=90,
-            fontsize=10,
-            labelpad=10,
-            va="center",
-            ha="center",
+    for suffix, sub_countries in halves:
+        if not sub_countries:
+            continue
+            
+        n_rows = len(sub_countries)
+        fig, axes = plt.subplots(
+            n_rows, n_cols, figsize=(figsize[0], figsize[1] / 2), sharex=False, sharey=False
         )
-        # Fix the label coordinates so all country names align vertically in figure space
-        row_ax.yaxis.set_label_coords(-0.35, 0.5)
 
-    fig.suptitle(
-        f"Word coverage per class and country – {exp_id}{title_suffix}",
-        fontsize=13,
-        y=0.98,
-    )
-    # Extra vertical padding between subplot rows so countries are visually separated
-    plt.tight_layout(rect=[0.05, 0.03, 1, 0.95])
-    plt.subplots_adjust(hspace=1.0)
-    plt.show()
+        # Normalize axes to 2D array
+        if n_rows == 1 and n_cols == 1:
+            axes = np.array([[axes]])
+        elif n_rows == 1:
+            axes = axes.reshape(1, -1)
+        elif n_cols == 1:
+            axes = axes.reshape(-1, 1)
+
+        for row_idx, country in enumerate(sub_countries):
+            df_country_test = test_df[test_df["country"] == country]
+            df_c = df[df["country"] == country]
+            country_meta = COUNTRY_DICT.get(country, {})
+            country_name = country_meta.get("country", country)
+
+            for col_idx, cls in enumerate(classes):
+                ax = axes[row_idx, col_idx]
+
+                df_cls = df_c[df_c["cls"] == cls].copy()
+                df_country_cls = df_country_test[df_country_test[cls] == 1] if not df_country_test.empty else pd.DataFrame()
+                denom_pos = float(len(df_country_cls))
+
+                if df_country_test.empty or denom_pos <= 0 or df_cls.empty:
+                    ax.set_xlim(0, 1)
+                    ax.set_ylim(0, 1)
+                    ax.text(0.5, 0.5, "N/A", ha="center", va="center", fontsize=8, color="gray")
+                    ax.set_xticks([])
+                    ax.set_yticks([])
+                    for spine in ["top", "right"]: ax.spines[spine].set_visible(False)
+                    if row_idx == 0: ax.set_title(cls, fontsize=11)
+                    continue
+
+                df_cls = df_cls.sort_values("total", ascending=False)
+                if top_k_words is not None: df_cls = df_cls.head(top_k_words)
+                if df_cls.empty:
+                    ax.axis("off")
+                    continue
+
+                y_positions, word_labels = [], []
+                max_x = denom_pos
+                y_scale = 1.0
+                n_words = len(df_cls)
+                y_range = max(1.0, n_words * y_scale)
+                fp_offset, fp_vert = 0.03 * y_range, 0.1 * y_range
+
+                for y_idx, (_, row) in enumerate(df_cls.iterrows()):
+                    y = y_idx * y_scale
+                    tp_count, fp_count = row["tp"], row["fp"]
+                    if tp_count == 0 and fp_count == 0: continue
+                    ax.hlines(y, 0.0, tp_count, colors="black", linewidth=1.2)
+                    if tp_count > 0: ax.vlines(tp_count, y, y + fp_vert, colors="black", linewidth=1.0)
+                    if fp_count > 0:
+                        y_red = y - fp_offset
+                        if fp_count <= max_x:
+                            ax.hlines(y_red, 0.0, fp_count, colors="red", linewidth=1.2)
+                            ax.vlines(fp_count, y_red, y_red - fp_vert, colors="red", linewidth=1)
+                        else:
+                            ax.hlines(y_red, 0.0, max_x, colors="red", linewidth=1.2)
+                            ax.annotate("", xy=(max_x, y_red), xytext=(max_x - 0.02 * max_x, y_red),
+                                        arrowprops=dict(arrowstyle="->", color="red", linewidth=1.0))
+                            ax.text(max_x, y_red + 0.6 * fp_vert, str(int(fp_count)),
+                                    ha="right", va="bottom", fontsize=6, color="red")
+                    y_positions.append(y)
+                    word_labels.append(row["word"])
+
+                if not y_positions:
+                    ax.axis("off")
+                    continue
+
+                ax.set_ylim(min(y_positions) - 0.2 * y_range, max(y_positions) + 0.2 * y_range)
+                ax.set_yticks(y_positions)
+                ax.set_yticklabels(word_labels, fontsize=7)
+                ax.set_xlim(0, max_x)
+                perc_fracs = np.linspace(0.0, 1.0, 6)
+                for i, frac in enumerate(perc_fracs):
+                    x_pos = frac * max_x
+                    ax.axvline(x_pos, color="lightgray", linestyle="--", linewidth=0.5, zorder=0)
+                    if row_idx == 0 and i in (1, 2, 3, 4):
+                        ax.text(x_pos, 1.02, f"{int(frac * 100)}%", transform=ax.get_xaxis_transform(),
+                                ha="center", va="bottom", fontsize=6, color="gray")
+                tick_positions, tick_labels, seen = [], [], set()
+                for frac in perc_fracs:
+                    org_count = int(np.floor(frac * max_x))
+                    if org_count >= 0 and org_count not in seen:
+                        seen.add(org_count); tick_positions.append(org_count); tick_labels.append(str(org_count))
+                ax.set_xticks(tick_positions)
+                ax.set_xticklabels(tick_labels)
+                ax.tick_params(axis="x", labelsize=6, colors="gray")
+                for spine in ["top", "right"]: ax.spines[spine].set_visible(False)
+                if row_idx == 0: ax.set_title(cls, fontsize=11, y=1.2)
+            row_ax = axes[row_idx, 0]
+            row_ax.set_ylabel(country_name, rotation=90, fontsize=9, labelpad=20, va="center", ha="center")
+            # Removed set_label_coords so Matplotlib places it dynamically outside the tick labels
+
+        # Force all left-column y-labels to align perfectly along the same vertical line
+        fig.align_ylabels(axes[:, 0])
+
+        plt.tight_layout(rect=[0.15, 0.03, 1, 0.95])
+        plt.subplots_adjust(hspace=1.0, wspace=1)
+        
+        if output_path:
+            base, ext = os.path.splitext(output_path)
+            part_path = f"{base}_{suffix}{ext}"
+            fig.savefig(part_path, dpi=150, bbox_inches="tight")
+            print(f"Figure saved to {part_path}")
+        plt.show()
 
 
 # ===========================================================================
@@ -650,7 +519,7 @@ def watch_training_diagnostics(
     max_length: int = 128,
     poll_interval: float = 20.0,
     seed: int = 42,
-    output_path: str | None = None,
+    output_path: Optional[str] = None,
 ) -> None:
     """
     Parallel diagnostic monitor for a running finetuner.py training session.
