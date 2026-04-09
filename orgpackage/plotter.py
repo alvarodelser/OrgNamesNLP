@@ -457,6 +457,11 @@ def _render_diagnostics(
 
     # ── Right panel: 2-D embedding traces ────────────────────────────────
     ax_proj.cla()
+
+    # Limit to first 8 epochs if more exist
+    projections = projections[:8]
+    if losses:
+        losses = losses[:8]
     n_epochs = len(projections)
 
     unique_classes = list(dict.fromkeys(probe_classes))  # preserve order
@@ -465,18 +470,32 @@ def _render_diagnostics(
         idxs = [i for i, c in enumerate(probe_classes) if c == cls]
         color = _CLASS_COLORS.get(cls, "black")
 
-        # Draw 'x' markers progressively fading up to the latest epoch
+        # Draw markers and linking lines progressively fading up to the latest epoch
         for pt_idx in idxs:
             for e in range(n_epochs - 1):
+                # alpha increases as we approach the latest epoch
                 alpha_val = 0.1 + 0.8 * ((e + 1) / max(n_epochs - 1, 1))
+
+                # Super thin line linking to the next epoch
+                p1 = projections[e][pt_idx]
+                p2 = projections[e + 1][pt_idx]
+                ax_proj.plot(
+                    [p1[0], p2[0]], [p1[1], p2[1]],
+                    color=color,
+                    alpha=alpha_val,
+                    linewidth=0.5,
+                    zorder=1
+                )
+
+                # Point marker at epoch e
                 ax_proj.scatter(
-                    projections[e][pt_idx, 0],
-                    projections[e][pt_idx, 1],
+                    p1[0],
+                    p1[1],
                     color=color,
                     marker="x",
                     s=15,
                     alpha=alpha_val,
-                    zorder=1,
+                    zorder=2,
                 )
 
             # Only plot the point for the LATEST epoch
@@ -635,6 +654,8 @@ def watch_training_diagnostics(
                 except (IndexError, ValueError):
                     continue
                 if epoch_num in processed_epochs:
+                    continue
+                if epoch_num > 8:
                     continue
 
                 epoch_dir = os.path.join(checkpoint_dir, entry)
