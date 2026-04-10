@@ -132,7 +132,7 @@ def similarity_orchestrator(trains, validations, euhub=False, models=None):
         print(f"Loading embeddings for model: {model}")
         instance_embeddings = load_embeddings(file_path=embeddings_path)
         
-        for domain in ['medical', 'administrative', 'education']:
+        for domain in trains.keys():
             technique = 'embedding'
             
             # Merge embeddings with training and validation data
@@ -257,7 +257,7 @@ def classifier_orchestrator(trains, validations, euhub=False, overwrite=False, m
         print(f"Loading embeddings for model: {model}")
         instance_embeddings = load_embeddings(file_path=embeddings_path)
 
-        for domain in ['medical', 'administrative', 'education']:
+        for domain in trains.keys():
             technique = 'embedding'
             structure = STRUCTURE_MAPPING[domain][-1] # We will not compare 3-class structure for classifiers.
             train = trains[domain].merge(
