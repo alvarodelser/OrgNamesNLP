@@ -650,12 +650,17 @@ def watch_training_diagnostics(
                     continue
                 if epoch_num in processed_epochs:
                     continue
-                if epoch_num > 8:
-                    continue
 
                 epoch_dir = os.path.join(checkpoint_dir, entry)
-                # Check that the checkpoint is fully written
-                if not os.path.exists(os.path.join(epoch_dir, "config.json")):
+                # Check that the checkpoint is fully written if we intend to encode it
+                if epoch_num <= 8 and not os.path.exists(os.path.join(epoch_dir, "config.json")):
+                    continue
+
+                processed_epochs.add(epoch_num)
+                new_epochs_found = True
+
+                # We ONLY encode embeddings for the first 8 epochs
+                if epoch_num > 8:
                     continue
 
                 print(f"[diagnostics] Loading checkpoint epoch {epoch_num} ...")
@@ -664,7 +669,6 @@ def watch_training_diagnostics(
                     model = AutoModel.from_pretrained(epoch_dir).to(device)
                     emb = _encode_probe(model, tokenizer, probe_df, max_length=max_length)
                     embeddings_per_epoch.append(emb)
-                    processed_epochs.add(epoch_num)
                     new_epochs_found = True
                     # Free GPU memory
                     del model
