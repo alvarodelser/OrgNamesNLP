@@ -682,8 +682,12 @@ def evaluate_classifier_experiment(exp, validation, clf=None):
 
     try:
         if structure == 'nested-class' and isinstance(clf, dict):
-            # Access classifiers correctly nested within 'nested_classifier' key
+            # Support two dict formats:
+            # 1. Loaded from file:  {'nested_classifier': {'hospital': clf, ...}, 'structure': ...}
+            # 2. Freshly trained:   {'hospital': clf, 'university_hospital': clf}  (returned by train_classifier)
             nested_clfs = clf.get('nested_classifier', {})
+            if not nested_clfs and 'hospital' in clf:
+                nested_clfs = clf  # flat format from train_classifier
             if 'hospital' not in nested_clfs:
                  raise KeyError("Nested classifier dictionary is missing the 'hospital' model.")
             hospital_clf = nested_clfs['hospital']
