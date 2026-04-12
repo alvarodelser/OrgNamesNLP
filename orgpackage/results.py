@@ -120,6 +120,14 @@ def generate_all_results(technique, csv_path="results/experiments.csv", output_d
     df['Examples'] = df['Parameters'].apply(lambda x: x.get('n_shot', 'N/A') if isinstance(x, dict) else 'N/A')
     df['Distance'] = df['Parameters'].apply(lambda x: x.get('distance', 'N/A') if isinstance(x, dict) else 'N/A')
 
+    # Extract extra fields for classifiers
+    df['Classifier'] = df['Parameters'].apply(lambda x: x.get('classifier', 'N/A') if isinstance(x, dict) else 'N/A')
+    df['C'] = df['Parameters'].apply(lambda x: x.get('C', 'N/A') if isinstance(x, dict) else 'N/A')
+    df['Solver'] = df['Parameters'].apply(lambda x: x.get('solver', 'N/A') if isinstance(x, dict) else 'N/A')
+    df['Penalty'] = df['Parameters'].apply(lambda x: x.get('penalty', 'N/A') if isinstance(x, dict) else 'N/A')
+    df['Kernel'] = df['Parameters'].apply(lambda x: x.get('kernel', 'N/A') if isinstance(x, dict) else 'N/A')
+    df['Gamma'] = df['Parameters'].apply(lambda x: x.get('gamma', 'N/A') if isinstance(x, dict) else 'N/A')
+
     # Extract numerical suffix and common ID for sorting
     df['ID_Num'] = df['ID'].apply(lambda x: int(x.split('-')[-1]) if x.split('-')[-1].isdigit() else 0)
     df['Common_ID'] = df['ID'].apply(lambda x: '-'.join(x.split('-')[1:]) if '-' in x else x)
@@ -154,72 +162,106 @@ def generate_all_results(technique, csv_path="results/experiments.csv", output_d
     # Calculate Delta F1 (Comparison vs Baseline)
     df['Delta_F1'] = df.apply(lambda row: row['F1'] - baseline_lookup.get(row['Domain'], 0.0), axis=1)
 
-    # Generate LaTeX Table (Technique-Specific)
-    if technique == 'nli':
-        headers = ["ID", "Technique", "Method", "Model", "Structure", "Domain", "Accuracy", "Recall", "F1"]
-        tabular_config = "lllrrllrrr"
-    elif technique == 'embedding':
-        headers = ["ID", "Technique", "Method", "Model", "Structure", "Examples", "Distance", "Domain", "Accuracy", "Recall", "F1"]
-        tabular_config = "lllrrlllrrr"
-    else: # rules or default
-        headers = ["ID", "Technique", "Method", "Structure", "Preprocessing", "Tokens", "Domain", "Accuracy", "Recall", "F1"]
-        tabular_config = "lllrrrllrrr"
-
-    latex_table = "\\begin{sidewaystable}[htbp]\n"
-    latex_table += "\\centering\n"
-    latex_table += "\\small\n"
-    latex_table += f"\\begin{{tabular}}{{{tabular_config}}}\n"
-    latex_table += "\\toprule\n"
-    latex_table += " & ".join(headers) + " \\\\\n"
-    latex_table += "\\midrule\n"
-    
     # Sort by Domain first, then canonical Method and ID_Num
     df_sorted = df.sort_values(by=['Domain', 'Method', 'ID_Num'])
     
     # Identify best F1 experiment per domain for bolding
     # We dropna to avoid selecting an experimental placeholder as the best
     best_f1_ids = []
-    for domain in DOMAIN_ORDER:
-        domain_df = df_sorted[df_sorted['Domain'] == domain]
-        if not domain_df.dropna(subset=['F1']).empty:
-            best_idx = domain_df['F1'].idxmax()
-            best_f1_ids.append(df_sorted.loc[best_idx, 'ID'])
-    
-    for _, row in df_sorted.iterrows():
-        is_best = row['ID'] in best_f1_ids
-        
-        # Build raw row values
-        vals = [row['ID'], row['Technique'], row['Method']]
-        
-        if technique == 'nli':
-            vals += [row['Model'], row['Structure']]
-        elif technique == 'embedding':
-            vals += [row['Model'], row['Structure'], str(row['Examples']), str(row['Distance'])]
-        else: # rules
-            vals += [row['Structure'], row['Preprocessing'], str(row['Tokens'])]
-            
-        vals += [str(row['Domain']),
-                 f"{row['Accuracy']:.6f}" if pd.notna(row['Accuracy']) else "0.000000",
-                 f"{row['Recall']:.6f}" if pd.notna(row['Recall']) else "0.000000",
-                 f"{row['F1']:.6f}" if pd.notna(row['F1']) else "0.000000"]
-        
-        # Apply bold if it is the best row in domain
+    if technique == 'embedding':
+        for domain in DOMAIN_ORDER:
+            for method in ['similarity', 'classifier']:
+                group_df = df_sorted[(df_sorted['Domain'] == domain) & (df_sorted['Method'] == method)]
+                if not group_df.dropna(subset=['F1']).empty:
+                    best_idx = group_df['F1'].idxmax()
+                    best_f1_ids.append(df_sorted.loc[best_idx, 'ID'])
+    else:
+        for domain in DOMAIN_ORDER:
+            domain_df = df_sorted[df_sorted['Domain'] == domain]
+            if not domain_df.dropna(subset=['F1']).empty:
+                best_idx = domain_df['F1'].idxmax()
+                best_f1_ids.append(df_sorted.loc[best_idx, 'ID'])
+
+    def format_row(row, is_best, cols):
+        vals = []
+        for col in cols:
+            if col in ['Accuracy', 'Recall', 'F1']:
+                v = f"{row[col]:.6f}" if pd.notna(row[col]) else "0.000000"
+            else:
+                v = str(row[col]) if col in row and pd.notna(row[col]) else ""
+            vals.append(v)
         if is_best:
             vals = [f"\\textbf{{{v}}}" for v in vals]
-            
-        latex_table += " & ".join(vals) + " \\\\\n"
+        return " & ".join(vals) + " \\\\\n"
+
+    # Generate LaTeX Table (Technique-Specific)
+    if technique == 'embedding':
+        # SIMILARITY TABLE
+        df_sim = df_sorted[df_sorted['Method'] == 'similarity']
+        sim_headers = ["ID", "Domain", "Technique", "Method", "Model", "Structure", "Examples", "Distance", "Accuracy", "Recall", "F1"]
+        sim_cols = ["ID", "Domain", "Technique", "Method", "Model", "Structure", "Examples", "Distance", "Accuracy", "Recall", "F1"]
+        sim_tabular_config = "l" * len(sim_cols)
+
+        latex_table = "\\begin{sidewaystable}[htbp]\n\\centering\n\\small\n"
+        latex_table += f"\\begin{{tabular}}{{{sim_tabular_config}}}\n\\toprule\n"
+        latex_table += " & ".join(sim_headers) + " \\\\\n\\midrule\n"
+        for _, row in df_sim.iterrows():
+            latex_table += format_row(row, row['ID'] in best_f1_ids, sim_cols)
+        latex_table += "\\bottomrule\n\\end{tabular}\n"
+        latex_table += "\\caption{The table shows experimental metrics for embedding similarity across all domains.}\n\\end{sidewaystable}\n\n"
+
+        # CLASSIFIER TABLE (Partitioned Logreg/SVM)
+        df_cls = df_sorted[df_sorted['Method'] == 'classifier']
+        cls_headers_logreg = ["ID", "Domain", "Technique", "Method", "Model", "Classifier", "Structure", "C", "solver", "penalty", "Accuracy", "Recall", "F1"]
+        cls_cols_logreg = ["ID", "Domain", "Technique", "Method", "Model", "Classifier", "Structure", "C", "Solver", "Penalty", "Accuracy", "Recall", "F1"]
         
-    latex_table += "\\bottomrule\n"
-    latex_table += "\\end{tabular}\n"
-    
-    # Caption logic
-    caption = f"\\caption{{The table shows experimental metrics for {technique} across all domains. "
-    caption += f"It compares results against domain-specific baselines to show performance gains. "
-    caption += f"The best configuration per domain in terms of F1 is highlighted in bold.}}\n"
-    
-    latex_table += caption
-    latex_table += "\\end{sidewaystable}\n"
-    
+        cls_headers_svm = ["ID", "Domain", "Technique", "Method", "Model", "Classifier", "Structure", "C", "Kernel", "Gamma", "Accuracy", "Recall", "F1"]
+        cls_cols_svm = ["ID", "Domain", "Technique", "Method", "Model", "Classifier", "Structure", "C", "Kernel", "Gamma", "Accuracy", "Recall", "F1"]
+        
+        cls_tabular_config = "l" * len(cls_cols_logreg)
+
+        latex_table += "\\begin{sidewaystable}[htbp]\n\\centering\n\\small\n"
+        latex_table += f"\\begin{{tabular}}{{{cls_tabular_config}}}\n\\toprule\n"
+        
+        df_logreg = df_cls[df_cls['Classifier'] == 'logreg']
+        if not df_logreg.empty:
+            latex_table += " & ".join(cls_headers_logreg) + " \\\\\n\\midrule\n"
+            for _, row in df_logreg.iterrows():
+                latex_table += format_row(row, row['ID'] in best_f1_ids, cls_cols_logreg)
+                
+        df_svm = df_cls[df_cls['Classifier'] == 'svm']
+        if not df_svm.empty:
+            if not df_logreg.empty:
+                latex_table += "\\midrule\n"
+            latex_table += " & ".join(cls_headers_svm) + " \\\\\n\\midrule\n"
+            for _, row in df_svm.iterrows():
+                latex_table += format_row(row, row['ID'] in best_f1_ids, cls_cols_svm)
+
+        latex_table += "\\bottomrule\n\\end{tabular}\n"
+        latex_table += "\\caption{The table shows experimental metrics for embedding classifiers across all domains.}\n\\end{sidewaystable}\n"
+
+    else:
+        if technique == 'nli':
+            headers = ["ID", "Technique", "Method", "Model", "Structure", "Domain", "Accuracy", "Recall", "F1"]
+            cols = ["ID", "Technique", "Method", "Model", "Structure", "Domain", "Accuracy", "Recall", "F1"]
+            tabular_config = "lllrrllrrr"
+        else: # rules or default
+            headers = ["ID", "Technique", "Method", "Structure", "Preprocessing", "Tokens", "Domain", "Accuracy", "Recall", "F1"]
+            cols = ["ID", "Technique", "Method", "Structure", "Preprocessing", "Tokens", "Domain", "Accuracy", "Recall", "F1"]
+            tabular_config = "lllrrrllrrr"
+
+        latex_table = "\\begin{sidewaystable}[htbp]\n\\centering\n\\small\n"
+        latex_table += f"\\begin{{tabular}}{{{tabular_config}}}\n\\toprule\n"
+        latex_table += " & ".join(headers) + " \\\\\n\\midrule\n"
+        for _, row in df_sorted.iterrows():
+            latex_table += format_row(row, row['ID'] in best_f1_ids, cols)
+        latex_table += "\\bottomrule\n\\end{tabular}\n"
+        caption = f"\\caption{{The table shows experimental metrics for {technique} across all domains. "
+        caption += f"It compares results against domain-specific baselines to show performance gains. "
+        caption += f"The best configuration per domain in terms of F1 is highlighted in bold.}}\n"
+        latex_table += caption
+        latex_table += "\\end{sidewaystable}\n"
+        
     table_filename = f"all_{technique}_table.txt"
     table_path = os.path.join(output_dir, table_filename)
     with open(table_path, "w") as f:
