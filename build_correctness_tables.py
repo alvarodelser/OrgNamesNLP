@@ -378,7 +378,7 @@ def main():
 
     # 1. Load experiments
     log.info("Loading experiments…")
-    exps = load_experiments()
+    exps = load_experiments('results/experiments_local.csv')
     emb_exps = exps[exps["Technique"] == "embedding"]
     sim_exps  = emb_exps[emb_exps["Method"] == "similarity"]
     clf_exps  = emb_exps[emb_exps["Method"] == "classifier"]
