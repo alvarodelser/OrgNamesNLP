@@ -112,9 +112,17 @@ def load_embeddings(model_name: str, dataset: pd.DataFrame):
         if pd.isna(v):
             return None
         try:
-            return np.array(ast.literal_eval(
-                str(v).replace("np.array(", "[").replace(")", "]")
-            ))
+            s = str(v)
+            # 1. Strip np.float32(...) / np.float64(...) wrappers → bare number
+            s = re.sub(r'np\.float(?:32|64|_)\(([^)]+)\)', r'\1', s)
+            # 2. Strip np.array([...]) wrapper → plain list
+            s = re.sub(r'np\.array\(\s*', '', s)
+            # Now clean up any trailing ) that belonged to np.array(
+            # Count unmatched ) and remove them
+            s = s.strip()
+            if s.endswith(')'):
+                s = s[:-1].strip()
+            return np.array(ast.literal_eval(s), dtype=np.float32)
         except Exception:
             return None
 
