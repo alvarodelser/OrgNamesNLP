@@ -351,8 +351,13 @@ def build_table(model_name: str, method_type: str,
             acc = result.mean()
             log.info("    %s  →  accuracy=%.4f  (%d instances)", eid, acc, len(result))
             new_col = result.to_frame()
-            cache_df = new_col if cache_df.empty else \
-                       cache_df.join(new_col, how="outer").fillna(0).astype(int)
+            if cache_df.empty:
+                cache_df = new_col
+            else:
+                # Drop column if it already exists (from a prior partial run)
+                if eid in cache_df.columns:
+                    cache_df = cache_df.drop(columns=[eid])
+                cache_df = cache_df.join(new_col, how="outer").fillna(0).astype(int)
             cache_df.to_csv(cache_path)
             log.info("    Saved to %s", cache_path)
         else:
