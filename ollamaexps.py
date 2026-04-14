@@ -14,23 +14,26 @@ from orgpackage.trainer import build_few_shot_prompt
 from orgpackage.evaluator import evaluate_ollama_experiment
 
 
-data = load_dataset()
+data = load_dataset().sample(n=10000, random_state=42)
 
 train_medgov_full, test_medgov = train_test_split(data, test_size=0.5, random_state=42)
 train_medgov, val_medgov = train_test_split(train_medgov_full, test_size=0.5, random_state=42)
 
+train_edu_full, test_edu = train_test_split(data, test_size=0.2, random_state=42)
+train_edu, val_edu = train_test_split(train_edu_full, test_size=0.5, random_state=42)
+
 trains = {
-    'medical': train_medgov,
     'administrative': train_medgov,
+    'education': train_edu
 }
 
 tests = {
-    'medical': test_medgov,
     'administrative': test_medgov,
+    'education': test_edu
 }
 
-print(f"Train size: medical/admin={len(train_medgov)}")
-print(f"Test size:  medical/admin={len(test_medgov)}")
+print(f"Train sizes: admin={len(train_medgov)}, education={len(train_edu)}")
+print(f"Test sizes:  admin={len(test_medgov)}, education={len(test_edu)}")
 
 OLLAMA_HOST = "http://localhost:11435"
 MODEL_NAME = "DeepSeek-R1:7B"
@@ -54,7 +57,7 @@ TEST_SAMPLE_SIZE = 10000  # Set to e.g. 500 for a quick run, None for full test 
 experiments_path = './results/experiments.csv'
 experiments = load_experiments(experiments_path)
 
-for domain in ['medical', 'administrative']:
+for domain in ['administrative', 'education']:
     classes = DOMAIN_CLASSES_CORR[domain]
     structure = STRUCTURE_MAPPING[domain][-1]
 
