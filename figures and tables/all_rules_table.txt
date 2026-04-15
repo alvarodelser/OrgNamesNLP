@@ -1,0 +1,39 @@
+\begin{sidewaystable}[htbp]
+\centering
+\small
+\begin{tabular}{lllrrrllrrr}
+\toprule
+ID & Technique & Method & Structure & Preprocessing & Tokens & Domain & Accuracy & Recall & F1 \\
+\midrule
+med-r-expert-0 & rules & expert & nested-class & None & N/A & medical & 0.956268 & 0.109266 & 0.148029 \\
+med-r-llm-0 & rules & llm_generated & nested-class & None & 5 & medical & 0.964596 & 0.534446 & 0.372017 \\
+med-r-counter-0 & rules & counter_algorithm & 3-class & None & 7 & medical & 0.975849 & 0.581476 & 0.437205 \\
+med-r-counter-1 & rules & counter_algorithm & 3-class & Spacy tokenization & 6 & medical & 0.977055 & 0.567093 & 0.441113 \\
+med-r-counter-2 & rules & counter_algorithm & 3-class & Decomposition & 3 & medical & 0.982720 & 0.427147 & 0.443624 \\
+med-r-counter-3 & rules & counter_algorithm & nested-class & None & 7 & medical & 0.982522 & 0.554880 & 0.472809 \\
+med-r-counter-4 & rules & counter_algorithm & nested-class & Spacy tokenization & 6 & medical & 0.984144 & 0.545816 & 0.486180 \\
+med-r-counter-5 & rules & counter_algorithm & nested-class & Decomposition & 7 & medical & 0.980594 & 0.554304 & 0.481839 \\
+med-r-idf-0 & rules & idf_best & 3-class & None & 3 & medical & 0.976386 & 0.616430 & 0.444856 \\
+med-r-idf-1 & rules & idf_best & 3-class & Spacy tokenization & 3 & medical & 0.978216 & 0.622497 & 0.458555 \\
+med-r-idf-2 & rules & idf_best & 3-class & Decomposition & 3 & medical & 0.975663 & 0.616503 & 0.440440 \\
+med-r-idf-3 & rules & idf_best & nested-class & None & 3 & medical & 0.981481 & 0.605792 & 0.598167 \\
+\textbf{med-r-idf-4} & \textbf{rules} & \textbf{idf_best} & \textbf{nested-class} & \textbf{Spacy tokenization} & \textbf{3} & \textbf{medical} & \textbf{0.982435} & \textbf{0.627816} & \textbf{0.612678} \\
+med-r-idf-5 & rules & idf_best & nested-class & Decomposition & 3 & medical & 0.983859 & 0.600546 & 0.585724 \\
+adm-r-llm-0 & rules & llm_generated & 2-class & None & 5 & administrative & 0.907144 & 0.689637 & 0.713588 \\
+adm-r-counter-0 & rules & counter_algorithm & 2-class & None & 3 & administrative & 0.939678 & 0.799975 & 0.822869 \\
+\textbf{adm-r-counter-1} & \textbf{rules} & \textbf{counter_algorithm} & \textbf{2-class} & \textbf{Spacy tokenization} & \textbf{3} & \textbf{administrative} & \textbf{0.943688} & \textbf{0.805629} & \textbf{0.832702} \\
+adm-r-counter-2 & rules & counter_algorithm & 2-class & Decomposition & 3 & administrative & 0.936971 & 0.807304 & 0.820697 \\
+adm-r-idf-0 & rules & idf_best & 2-class & None & 3 & administrative & 0.877142 & 0.814084 & 0.739451 \\
+adm-r-idf-1 & rules & idf_best & 2-class & Spacy tokenization & 3 & administrative & 0.918343 & 0.834796 & 0.800033 \\
+adm-r-idf-2 & rules & idf_best & 2-class & Decomposition & 3 & administrative & 0.874907 & 0.812602 & 0.736436 \\
+edu-r-llm-0 & rules & llm_generated & 3-multiclass & None & 5 & education & 0.825499 & 0.216542 & 0.338022 \\
+edu-r-counter-0 & rules & counter_algorithm & 3-multiclass & None & 5 & education & 0.823033 & 0.688904 & 0.649656 \\
+edu-r-counter-1 & rules & counter_algorithm & 3-multiclass & Spacy tokenization & 10 & education & 0.784982 & 0.724199 & 0.615246 \\
+edu-r-counter-2 & rules & counter_algorithm & 3-multiclass & Decomposition & 5 & education & 0.796159 & 0.705601 & 0.631252 \\
+edu-r-idf-0 & rules & idf_best & 3-multiclass & None & 6 & education & 0.849578 & 0.709943 & 0.667354 \\
+\textbf{edu-r-idf-1} & \textbf{rules} & \textbf{idf_best} & \textbf{3-multiclass} & \textbf{Spacy tokenization} & \textbf{5} & \textbf{education} & \textbf{0.875466} & \textbf{0.666769} & \textbf{0.687306} \\
+edu-r-idf-2 & rules & idf_best & 3-multiclass & Decomposition & 6 & education & 0.821499 & 0.727680 & 0.650861 \\
+\bottomrule
+\end{tabular}
+\caption{The table shows experimental metrics for rules across all domains. It compares results against domain-specific baselines to show performance gains. The best configuration per domain in terms of F1 is highlighted in bold.}
+\end{sidewaystable}

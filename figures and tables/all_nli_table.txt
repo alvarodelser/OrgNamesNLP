@@ -1,0 +1,30 @@
+\begin{sidewaystable}[htbp]
+\centering
+\small
+\begin{tabular}{lllrrllrrr}
+\toprule
+ID & Technique & Method & Model & Structure & Domain & Accuracy & Recall & F1 \\
+\midrule
+med-n-0-0 & nli & 0_shot & roberta-large & 3-class & medical & 0.974863 & 0.644098 & 0.440823 \\
+med-n-0-1 & nli & 0_shot & bge-m3 & 3-class & medical & 0.522354 & 0.650609 & 0.265277 \\
+\textbf{med-n-0-2} & \textbf{nli} & \textbf{0_shot} & \textbf{mDeBerta} & \textbf{3-class} & \textbf{medical} & \textbf{0.980167} & \textbf{0.593545} & \textbf{0.476352} \\
+med-n-0-3 & nli & 0_shot & MiniLM & 3-class & medical & 0.522452 & 0.625190 & 0.123156 \\
+med-n-0-4 & nli & 0_shot & roberta-large & nested-class & medical & 0.253989 & 0.809255 & 0.054539 \\
+med-n-0-5 & nli & 0_shot & bge-m3 & nested-class & medical & 0.045716 & 0.565684 & 0.041871 \\
+med-n-0-6 & nli & 0_shot & mDeBerta & nested-class & medical & 0.149934 & 0.777962 & 0.053806 \\
+med-n-0-7 & nli & 0_shot & MiniLM & nested-class & medical & 0.698137 & 0.739025 & 0.142762 \\
+med-n-few-0 & nli & few_shot & DeepSeek-R1:7B & nested-class & medical & 0.951589 & 0.684133 & 0.362167 \\
+adm-n-0-0 & nli & 0_shot & roberta-large & 2-class & administrative & 0.896647 & 0.826847 & 0.767278 \\
+\textbf{adm-n-0-1} & \textbf{nli} & \textbf{0_shot} & \textbf{bge-m3} & \textbf{2-class} & \textbf{administrative} & \textbf{0.909281} & \textbf{0.797062} & \textbf{0.772669} \\
+adm-n-0-2 & nli & 0_shot & mDeBerta & 2-class & administrative & 0.800449 & 0.831855 & 0.674289 \\
+adm-n-0-3 & nli & 0_shot & MiniLM & 2-class & administrative & 0.635634 & 0.695312 & 0.527614 \\
+adm-n-few-0 & nli & few_shot & DeepSeek-R1:7B & 2-class & administrative & 0.920000 & 0.500000 & 0.479167 \\
+edu-n-0-0 & nli & 0_shot & roberta-large & 3-multiclass & education & 0.833607 & 0.416544 & 0.473872 \\
+\textbf{edu-n-0-1} & \textbf{nli} & \textbf{0_shot} & \textbf{bge-m3} & \textbf{3-multiclass} & \textbf{education} & \textbf{0.831991} & \textbf{0.537146} & \textbf{0.497835} \\
+edu-n-0-2 & nli & 0_shot & mDeBerta & 3-multiclass & education & 0.827772 & 0.419011 & 0.447585 \\
+edu-n-0-3 & nli & 0_shot & MiniLM & 3-multiclass & education & 0.711922 & 0.366130 & 0.241515 \\
+edu-n-few-0 & nli & few_shot & DeepSeek-R1:7B & 3-multiclass & education & 0.788845 & 0.000100 & 0.000199 \\
+\bottomrule
+\end{tabular}
+\caption{The table shows experimental metrics for nli across all domains. It compares results against domain-specific baselines to show performance gains. The best configuration per domain in terms of F1 is highlighted in bold.}
+\end{sidewaystable}

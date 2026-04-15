@@ -1,0 +1,33 @@
+\begin{table}[ht]
+\centering
+\caption{Mean F1 per model across all configurations and domains.}
+\label{tab:embedding_f1_models}
+\begin{tabular}{lr}
+\toprule
+\textbf{Model} & \textbf{Mean F1} \\
+\midrule
+finetuned-me5 & \textbf{0.6384} \\
+mistral & 0.5796 \\
+qwen & 0.5454 \\
+multilingual-e5 & 0.5298 \\
+e5-small & 0.4165 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Mean F1 per technique across all models and domains.}
+\label{tab:embedding_f1_techniques}
+\begin{tabular}{lr}
+\toprule
+\textbf{Technique} & \textbf{Mean F1} \\
+\midrule
+Clf (SVM) & \textbf{0.7647} \\
+Clf (LR) & 0.6966 \\
+Sim (0-shot) & 0.4447 \\
+Sim (few-shot) & 0.4303 \\
+Sim (1-shot) & 0.3735 \\
+\bottomrule
+\end{tabular}
+\end{table}

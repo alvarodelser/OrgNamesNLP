@@ -1,0 +1,101 @@
+\begin{sidewaystable}[htbp]
+\centering
+\small
+\begin{tabular}{lllllllllll}
+\toprule
+ID & Domain & Technique & Method & Model & Structure & Examples & Distance & Accuracy & Recall & F1 \\
+\midrule
+\textbf{med-e-similarity-0} & \textbf{medical} & \textbf{embedding} & \textbf{similarity} & \textbf{multilingual-e5} & \textbf{3-class} & \textbf{0_shot} & \textbf{0.1} & \textbf{0.984168} & \textbf{0.304990} & \textbf{0.348230} \\
+med-e-similarity-1 & medical & embedding & similarity & multilingual-e5 & 3-class & 1_shot & 0.1 & 0.921418 & 0.408667 & 0.105151 \\
+med-e-similarity-2 & medical & embedding & similarity & multilingual-e5 & 3-class & few_shot & 0.05 & 0.978404 & 0.407954 & 0.220443 \\
+med-e-similarity-3 & medical & embedding & similarity & qwen & 3-class & 0_shot & 0.5 & 0.971403 & 0.530709 & 0.149797 \\
+med-e-similarity-4 & medical & embedding & similarity & qwen & 3-class & 1_shot & 0.5 & 0.954201 & 0.328241 & 0.185169 \\
+med-e-similarity-5 & medical & embedding & similarity & qwen & 3-class & few_shot & 0.3 & 0.977911 & 0.509904 & 0.256171 \\
+med-e-similarity-6 & medical & embedding & similarity & mistral & 3-class & 0_shot & 0.2 & 0.980090 & 0.241478 & 0.194220 \\
+med-e-similarity-7 & medical & embedding & similarity & mistral & 3-class & 1_shot & 0.2 & 0.975926 & 0.113083 & 0.136733 \\
+med-e-similarity-8 & medical & embedding & similarity & mistral & 3-class & few_shot & 0.15 & 0.975729 & 0.486291 & 0.253893 \\
+med-e-similarity-9 & medical & embedding & similarity & e5-small & 3-class & 0_shot & 0.1 & 0.981571 & 0.117828 & 0.173329 \\
+med-e-similarity-10 & medical & embedding & similarity & e5-small & 3-class & 1_shot & 0.1 & 0.953576 & 0.084934 & 0.050910 \\
+med-e-similarity-11 & medical & embedding & similarity & e5-small & 3-class & few_shot & 0.1 & 0.816069 & 0.522673 & 0.073753 \\
+med-e-similarity-12 & medical & embedding & similarity & finetuned-me5 & 3-class & 0_shot & 0.01 & 0.961911 & 0.469388 & 0.026048 \\
+med-e-similarity-18 & medical & embedding & similarity & finetuned-me5 & 3-class & 1_shot & 0.05 & 0.979487 & 0.427971 & 0.343107 \\
+med-e-similarity-19 & medical & embedding & similarity & finetuned-me5 & 3-class & few_shot & 0.01 & 0.979553 & 0.559112 & 0.347172 \\
+adm-e-similarity-0 & administrative & embedding & similarity & multilingual-e5 & 2-class & 0_shot & 0.15 & 0.770938 & 0.804084 & 0.639797 \\
+adm-e-similarity-1 & administrative & embedding & similarity & multilingual-e5 & 2-class & 1_shot & 0.1 & 0.771179 & 0.574040 & 0.543606 \\
+adm-e-similarity-2 & administrative & embedding & similarity & multilingual-e5 & 2-class & few_shot & 0.05 & 0.919950 & 0.607796 & 0.654192 \\
+adm-e-similarity-3 & administrative & embedding & similarity & qwen & 2-class & 0_shot & 0.7 & 0.794364 & 0.766306 & 0.644378 \\
+adm-e-similarity-4 & administrative & embedding & similarity & qwen & 2-class & 1_shot & 0.5 & 0.891397 & 0.502398 & 0.486496 \\
+adm-e-similarity-5 & administrative & embedding & similarity & qwen & 2-class & few_shot & 0.3 & 0.925626 & 0.697743 & 0.741955 \\
+adm-e-similarity-6 & administrative & embedding & similarity & mistral & 2-class & 0_shot & 0.3 & 0.919572 & 0.705013 & 0.737436 \\
+adm-e-similarity-7 & administrative & embedding & similarity & mistral & 2-class & 1_shot & 0.3 & 0.772348 & 0.713248 & 0.609657 \\
+adm-e-similarity-8 & administrative & embedding & similarity & mistral & 2-class & few_shot & 0.15 & 0.935417 & 0.758484 & 0.793699 \\
+adm-e-similarity-9 & administrative & embedding & similarity & e5-small & 2-class & 0_shot & 0.1 & 0.900600 & 0.500223 & 0.474728 \\
+adm-e-similarity-10 & administrative & embedding & similarity & e5-small & 2-class & 1_shot & 0.1 & 0.898979 & 0.510050 & 0.496698 \\
+adm-e-similarity-11 & administrative & embedding & similarity & e5-small & 2-class & few_shot & 0.05 & 0.911513 & 0.554500 & 0.574878 \\
+adm-e-similarity-12 & administrative & embedding & similarity & finetuned-me5 & 2-class & 0_shot & 0.1 & 0.962284 & 0.941176 & 0.831819 \\
+\textbf{adm-e-similarity-18} & \textbf{administrative} & \textbf{embedding} & \textbf{similarity} & \textbf{finetuned-me5} & \textbf{2-class} & \textbf{1_shot} & \textbf{0.05} & \textbf{0.963270} & \textbf{0.936754} & \textbf{0.834844} \\
+adm-e-similarity-19 & administrative & embedding & similarity & finetuned-me5 & 2-class & few_shot & 0.01 & 0.676945 & 0.890314 & 0.353266 \\
+edu-e-similarity-0 & education & embedding & similarity & multilingual-e5 & 3-multiclass & 0_shot & 0.15 & 0.871706 & 0.614236 & 0.505434 \\
+edu-e-similarity-1 & education & embedding & similarity & multilingual-e5 & 3-multiclass & 1_shot & 0.1 & 0.752082 & 0.434147 & 0.248134 \\
+edu-e-similarity-2 & education & embedding & similarity & multilingual-e5 & 3-multiclass & few_shot & 0.1 & 0.575447 & 0.679848 & 0.262027 \\
+edu-e-similarity-3 & education & embedding & similarity & qwen & 3-multiclass & 0_shot & 0.7 & 0.870782 & 0.581780 & 0.485113 \\
+edu-e-similarity-4 & education & embedding & similarity & qwen & 3-multiclass & 1_shot & 0.5 & 0.869994 & 0.315616 & 0.262263 \\
+edu-e-similarity-5 & education & embedding & similarity & qwen & 3-multiclass & few_shot & 0.3 & 0.906132 & 0.228346 & 0.340588 \\
+edu-e-similarity-6 & education & embedding & similarity & mistral & 3-multiclass & 0_shot & 0.3 & 0.908266 & 0.350068 & 0.451101 \\
+edu-e-similarity-7 & education & embedding & similarity & mistral & 3-multiclass & 1_shot & 0.3 & 0.611930 & 0.565826 & 0.316307 \\
+edu-e-similarity-8 & education & embedding & similarity & mistral & 3-multiclass & few_shot & 0.15 & 0.915368 & 0.402072 & 0.491348 \\
+edu-e-similarity-9 & education & embedding & similarity & e5-small & 3-multiclass & 0_shot & 0.15 & 0.671910 & 0.409485 & 0.213756 \\
+edu-e-similarity-10 & education & embedding & similarity & e5-small & 3-multiclass & 1_shot & 0.2 & 0.524017 & 0.533857 & 0.189732 \\
+edu-e-similarity-11 & education & embedding & similarity & e5-small & 3-multiclass & few_shot & 0.1 & 0.782214 & 0.407158 & 0.291436 \\
+edu-e-similarity-12 & education & embedding & similarity & finetuned-me5 & 3-multiclass & 0_shot & 0.2 & 0.953300 & 0.851818 & 0.795884 \\
+edu-e-similarity-18 & education & embedding & similarity & finetuned-me5 & 3-multiclass & 1_shot & 0.3 & 0.951745 & 0.866248 & 0.793478 \\
+\textbf{edu-e-similarity-19} & \textbf{education} & \textbf{embedding} & \textbf{similarity} & \textbf{finetuned-me5} & \textbf{3-multiclass} & \textbf{few_shot} & \textbf{0.01} & \textbf{0.957772} & \textbf{0.764926} & \textbf{0.799415} \\
+\bottomrule
+\end{tabular}
+\caption{The table shows experimental metrics for embedding similarity across all domains.}
+\end{sidewaystable}
+
+\begin{sidewaystable}[htbp]
+\centering
+\small
+\begin{tabular}{lllllllllllll}
+\toprule
+ID & Domain & Technique & Method & Model & Classifier & Structure & C & solver & penalty & Accuracy & Recall & F1 \\
+\midrule
+med-e-classifier-0 & medical & embedding & classifier & multilingual-e5 & logreg & nested-class & 10 & liblinear & l1 & 0.979479 & 0.723484 & 0.562499 \\
+med-e-classifier-2 & medical & embedding & classifier & qwen & logreg & nested-class & 10 & liblinear & l1 & 0.985538 & 0.783560 & 0.629873 \\
+med-e-classifier-4 & medical & embedding & classifier & mistral & logreg & nested-class & 10 & liblinear & l1 & 0.986950 & 0.826420 & 0.643318 \\
+med-e-classifier-6 & medical & embedding & classifier & e5-small & logreg & nested-class & 1 & lbfgs & l2 & 0.902455 & 0.734472 & 0.270243 \\
+med-e-classifier-8 & medical & embedding & classifier & finetuned-me5 & logreg & nested-class & 10 & liblinear & l1 & 0.979093 & 0.818082 & 0.513329 \\
+adm-e-classifier-0 & administrative & embedding & classifier & multilingual-e5 & logreg & 2-class & 10 & liblinear & l1 & 0.938874 & 0.941253 & 0.862211 \\
+adm-e-classifier-2 & administrative & embedding & classifier & qwen & logreg & 2-class & 10 & liblinear & l1 & 0.944517 & 0.925343 & 0.868487 \\
+adm-e-classifier-4 & administrative & embedding & classifier & mistral & logreg & 2-class & 10 & liblinear & l1 & 0.950837 & 0.942878 & 0.883531 \\
+adm-e-classifier-5 & administrative & embedding & classifier & e5-small & logreg & 2-class & 10 & liblinear & l1 & 0.876291 & 0.874330 & 0.758679 \\
+adm-e-classifier-8 & administrative & embedding & classifier & finetuned-me5 & logreg & 2-class & 0.01 & liblinear & l1 & 0.953211 & 0.960845 & 0.888877 \\
+edu-e-classifier-0 & education & embedding & classifier & multilingual-e5 & logreg & 3-multiclass & 10 & liblinear & l1 & 0.863709 & 0.912029 & 0.714403 \\
+edu-e-classifier-2 & education & embedding & classifier & qwen & logreg & 3-multiclass & 10 & liblinear & l1 & 0.885593 & 0.891451 & 0.748070 \\
+edu-e-classifier-3 & education & embedding & classifier & e5-small & logreg & 3-multiclass & 10 & liblinear & l1 & 0.740400 & 0.821275 & 0.537592 \\
+edu-e-classifier-4 & education & embedding & classifier & mistral & logreg & 3-multiclass & 10 & liblinear & l1 & 0.898863 & 0.918018 & 0.775537 \\
+edu-e-classifier-8 & education & embedding & classifier & finetuned-me5 & logreg & 3-multiclass & 10 & lbfgs & l2 & 0.907380 & 0.953533 & 0.791671 \\
+\midrule
+ID & Domain & Technique & Method & Model & Classifier & Structure & C & Kernel & Gamma & Accuracy & Recall & F1 \\
+\midrule
+med-e-classifier-1 & medical & embedding & classifier & multilingual-e5 & svm & nested-class & 10 & rbf & scale & 0.987554 & 0.665972 & 0.624416 \\
+med-e-classifier-3 & medical & embedding & classifier & qwen & svm & nested-class & 1 & rbf & scale & 0.990139 & 0.765587 & 0.666347 \\
+\textbf{med-e-classifier-5} & \textbf{medical} & \textbf{embedding} & \textbf{classifier} & \textbf{mistral} & \textbf{svm} & \textbf{nested-class} & \textbf{10} & \textbf{rbf} & \textbf{scale} & \textbf{0.991947} & \textbf{0.672002} & \textbf{0.682510} \\
+med-e-classifier-7 & medical & embedding & classifier & e5-small & svm & nested-class & 10 & rbf & scale & 0.979095 & 0.620456 & 0.537543 \\
+med-e-classifier-9 & medical & embedding & classifier & finetuned-me5 & svm & nested-class & 10 & rbf & scale & 0.984813 & 0.827731 & 0.556991 \\
+adm-e-classifier-1 & administrative & embedding & classifier & multilingual-e5 & svm & 2-class & 10 & rbf & scale & 0.950992 & 0.952657 & 0.885668 \\
+adm-e-classifier-3 & administrative & embedding & classifier & qwen & svm & 2-class & 1 & rbf & scale & 0.955703 & 0.943593 & 0.892814 \\
+adm-e-classifier-6 & administrative & embedding & classifier & e5-small & svm & 2-class & 10 & rbf & scale & 0.942260 & 0.918194 & 0.862910 \\
+\textbf{adm-e-classifier-7} & \textbf{administrative} & \textbf{embedding} & \textbf{classifier} & \textbf{mistral} & \textbf{svm} & \textbf{2-class} & \textbf{10} & \textbf{rbf} & \textbf{scale} & \textbf{0.960816} & \textbf{0.944597} & \textbf{0.900882} \\
+adm-e-classifier-9 & administrative & embedding & classifier & finetuned-me5 & svm & 2-class & 10 & rbf & scale & 0.959062 & 0.959172 & 0.899847 \\
+edu-e-classifier-1 & education & embedding & classifier & multilingual-e5 & svm & 3-multiclass & 10 & rbf & scale & 0.895371 & 0.936686 & 0.771529 \\
+edu-e-classifier-5 & education & embedding & classifier & mistral & svm & 3-multiclass & 10 & rbf & scale & 0.924284 & 0.899582 & 0.823174 \\
+\textbf{edu-e-classifier-6} & \textbf{education} & \textbf{embedding} & \textbf{classifier} & \textbf{qwen} & \textbf{svm} & \textbf{3-multiclass} & \textbf{10} & \textbf{rbf} & \textbf{scale} & \textbf{0.929943} & \textbf{0.820452} & \textbf{0.824113} \\
+edu-e-classifier-7 & education & embedding & classifier & e5-small & svm & 3-multiclass & 10 & rbf & scale & 0.886457 & 0.872244 & 0.741813 \\
+edu-e-classifier-9 & education & embedding & classifier & finetuned-me5 & svm & 3-multiclass & 10 & rbf & scale & 0.911311 & 0.955301 & 0.799627 \\
+\bottomrule
+\end{tabular}
+\caption{The table shows experimental metrics for embedding classifiers across all domains.}
+\end{sidewaystable}

@@ -19,6 +19,12 @@ NLI   (xxx-n-0-2   = mDeBERTa)
     We reconstruct the test set (union of instances the evaluator actually
     saw for each domain) and compute F1 per country from scratch.
 
+EMBEDDINGS  (xxx-e-similarity-N / xxx-e-classifier-N)
+    Per-instance exact-match correctness tables are pre-built in
+    results/correctness_tables/.  Since only binary correctness (not
+    per-class predictions) is stored, we compute per-country mean
+    exact-match correctness as the metric.
+
 Run this script incrementally: after adding the next technique group,
 re-run – existing columns are preserved and new ones are appended.
 
@@ -51,6 +57,7 @@ DATASET_PATH           = "data/wikidata_enriched_dataset.csv"
 TOKENIZED_PATH         = "results/tokenized_names.csv"
 DECOMPOSED_PATH        = "results/decomposed_names.csv"
 OUTPUT_PATH            = "results/cd_diagram_data.csv"
+CORRECTNESS_DIR        = "results/correctness_tables"
 
 # ── domain prefix helpers --------------------------------------------------------
 DOMAIN_PREFIX = {
@@ -272,6 +279,116 @@ def compute_nli_country_f1(nli_exp_ids: list, col_label: str,
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# Section 3: Compute embedding country metric from correctness tables
+# ════════════════════════════════════════════════════════════════════════════════
+
+def compute_embedding_country_metric_from_correctness(
+    exp_ids: list, col_label: str,
+    correctness_csv: str,
+    dataset_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Compute per-country mean exact-match correctness from a pre-built
+    correctness table for embedding experiments.
+
+    The correctness tables store binary per-instance exact-match correctness
+    (1 = ALL class labels correctly predicted, 0 = at least one wrong).
+    Since the actual per-class prediction vectors are not stored, the best
+    metric we can derive without re-running inference is mean exact-match
+    correctness per country (= subset accuracy).
+
+    Parameters
+    ----------
+    exp_ids        : one experiment ID per domain,
+                     e.g. ["med-e-similarity-0", "adm-e-similarity-0", "edu-e-similarity-0"]
+    col_label      : name that will appear as a column in the output table
+    correctness_csv: path to the correctness CSV (instance × experiment)
+    dataset_df     : DataFrame with columns ["instance", "country"];
+                     instances must be lowercase-normalised.
+
+    Returns
+    -------
+    DataFrame with columns ["domain", "country", col_label]
+    """
+    print(f"  Loading correctness table: {correctness_csv}")
+    ct = pd.read_csv(correctness_csv)
+
+    # Handle instance column (may be named 'instance' or may be an unnamed index)
+    if "instance" not in ct.columns:
+        first_col = ct.columns[0]
+        if first_col.startswith("Unnamed"):
+            ct = ct.rename(columns={first_col: "instance"})
+        else:
+            # Instance might be in the index after read_csv(index_col=0)
+            ct = ct.reset_index()
+            ct = ct.rename(columns={ct.columns[0]: "instance"})
+
+    # Normalise instance URIs to lowercase for matching
+    ct["instance"] = ct["instance"].str.lower()
+
+    # Pre-load all class columns from the dataset for the MIN_COUNTRY_VOL
+    # filter (loaded once, reused across all exp_ids in this call).
+    all_classes = sorted(set(
+        cls for d in DOMAIN_CLASSES_CORR.values() for cls in d
+    ))
+    class_df = pd.read_csv(DATASET_PATH, usecols=["instance"] + all_classes)
+    class_df = class_df.drop_duplicates(subset=["instance"], keep="first")
+    class_df["instance"] = class_df["instance"].str.lower()
+
+    rows = []
+    for exp_id in exp_ids:
+        if exp_id not in ct.columns:
+            print(f"  WARNING: column '{exp_id}' not found in {correctness_csv} – skipping.")
+            continue
+
+        # Infer domain from the ID prefix (e.g. "med" → "medical")
+        prefix = exp_id.split("-")[0]
+        domain = PREFIX_DOMAIN.get(prefix)
+        if domain is None:
+            print(f"  WARNING: cannot infer domain from '{exp_id}' – skipping.")
+            continue
+
+        classes = DOMAIN_CLASSES_CORR[domain]
+
+        # Merge correctness with dataset to get country
+        merged = ct[["instance", exp_id]].merge(
+            dataset_df[["instance", "country"]],
+            on="instance", how="inner",
+        )
+        merged = merged.dropna(subset=[exp_id])
+        merged[exp_id] = merged[exp_id].astype(int)
+
+        # Add class columns for the MIN_COUNTRY_VOL filter
+        merged = merged.merge(class_df[["instance"] + classes], on="instance", how="left")
+
+        # Per-country metric
+        for country in sorted(merged["country"].unique()):
+            cdf = merged[merged["country"] == country]
+
+            # Filter: each class must have ≥ MIN_COUNTRY_VOL positive instances
+            counts = [cdf[cdf[cls] == 1].shape[0] for cls in classes]
+            if not counts or min(counts) < MIN_COUNTRY_VOL:
+                continue
+
+            metric_val = cdf[exp_id].mean()
+            rows.append({
+                "domain":  domain,
+                "country": country,
+                col_label: float(metric_val),
+            })
+
+        n_countries = len([r for r in rows if r.get("domain") == domain])
+        print(f"  '{exp_id}' ({domain}): {n_countries} valid countries.")
+
+    if not rows:
+        return pd.DataFrame(columns=["domain", "country", col_label])
+
+    result = pd.DataFrame(rows)
+    result = result.drop_duplicates(subset=["domain", "country"]).reset_index(drop=True)
+    return result
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # Main: define experiment groups and build/merge the output table
 # ════════════════════════════════════════════════════════════════════════════════
 
@@ -346,12 +463,89 @@ def main():
         print(f"\n[Block 3] '{col_nli_mdeberta}' already present – skipping.")
 
     # ════════════════════════════════════════════════════════════════════
-    # Future blocks can be added here in the same pattern:
+    # EMBEDDING BLOCKS  (use pre-built correctness tables)
     #
-    # col_xxx = "My New Technique"
-    # if col_xxx not in cd_data.columns:
-    #     df_block = ...
-    #     cd_data  = merge_block(cd_data, df_block, col_xxx)
+    # Lazy-load dataset once for all embedding blocks (need country info).
+    # ════════════════════════════════════════════════════════════════════
+    dataset_df = None   # loaded on first embedding block
+
+    def _ensure_dataset():
+        nonlocal dataset_df
+        if dataset_df is None:
+            print("  Loading dataset for country information…")
+            dataset_df = pd.read_csv(DATASET_PATH, usecols=["instance", "country"])
+            dataset_df = dataset_df.drop_duplicates(subset=["instance"], keep="first")
+            # Normalise to lowercase (correctness tables use lowercase URIs)
+            dataset_df["instance"] = dataset_df["instance"].str.lower()
+            print(f"    → {len(dataset_df)} unique instances.")
+        return dataset_df
+
+    # ════════════════════════════════════════════════════════════════════
+    # BLOCK 4 – ME5 Similarity:  xxx-e-similarity-0
+    # ════════════════════════════════════════════════════════════════════
+    col_me5_sim = "ME5 (Sim)"
+    if col_me5_sim not in cd_data.columns:
+        print(f"\n[Block 4] Computing '{col_me5_sim}' from correctness table…")
+        df_block = compute_embedding_country_metric_from_correctness(
+            exp_ids=["med-e-similarity-0", "adm-e-similarity-0", "edu-e-similarity-0"],
+            col_label=col_me5_sim,
+            correctness_csv=os.path.join(CORRECTNESS_DIR, "multilingual-e5_sim.csv"),
+            dataset_df=_ensure_dataset(),
+        )
+        cd_data = merge_block(cd_data, df_block, col_me5_sim)
+    else:
+        print(f"\n[Block 4] '{col_me5_sim}' already present – skipping.")
+
+    # ════════════════════════════════════════════════════════════════════
+    # BLOCK 5 – ME5 SVM:  xxx-e-classifier-1
+    # ════════════════════════════════════════════════════════════════════
+    col_me5_svm = "ME5 (SVM)"
+    if col_me5_svm not in cd_data.columns:
+        print(f"\n[Block 5] Computing '{col_me5_svm}' from correctness table…")
+        df_block = compute_embedding_country_metric_from_correctness(
+            exp_ids=["med-e-classifier-1", "adm-e-classifier-1", "edu-e-classifier-1"],
+            col_label=col_me5_svm,
+            correctness_csv=os.path.join(CORRECTNESS_DIR, "multilingual-e5_clf.csv"),
+            dataset_df=_ensure_dataset(),
+        )
+        cd_data = merge_block(cd_data, df_block, col_me5_svm)
+    else:
+        print(f"\n[Block 5] '{col_me5_svm}' already present – skipping.")
+
+    # ════════════════════════════════════════════════════════════════════
+    # BLOCK 6 – Finetuned ME5 Similarity:  xxx-e-similarity-12
+    # ════════════════════════════════════════════════════════════════════
+    col_ft_sim = "FT-ME5 (Sim)"
+    if col_ft_sim not in cd_data.columns:
+        print(f"\n[Block 6] Computing '{col_ft_sim}' from correctness table…")
+        df_block = compute_embedding_country_metric_from_correctness(
+            exp_ids=["med-e-similarity-12", "adm-e-similarity-12", "edu-e-similarity-12"],
+            col_label=col_ft_sim,
+            correctness_csv=os.path.join(CORRECTNESS_DIR, "finetuned-me5_sim.csv"),
+            dataset_df=_ensure_dataset(),
+        )
+        cd_data = merge_block(cd_data, df_block, col_ft_sim)
+    else:
+        print(f"\n[Block 6] '{col_ft_sim}' already present – skipping.")
+
+    # ════════════════════════════════════════════════════════════════════
+    # BLOCK 7 – Finetuned ME5 SVM:  xxx-e-classifier-9
+    # ════════════════════════════════════════════════════════════════════
+    col_ft_svm = "FT-ME5 (SVM)"
+    if col_ft_svm not in cd_data.columns:
+        print(f"\n[Block 7] Computing '{col_ft_svm}' from correctness table…")
+        df_block = compute_embedding_country_metric_from_correctness(
+            exp_ids=["med-e-classifier-9", "adm-e-classifier-9", "edu-e-classifier-9"],
+            col_label=col_ft_svm,
+            correctness_csv=os.path.join(CORRECTNESS_DIR, "finetuned-me5_clf.csv"),
+            dataset_df=_ensure_dataset(),
+        )
+        cd_data = merge_block(cd_data, df_block, col_ft_svm)
+    else:
+        print(f"\n[Block 7] '{col_ft_svm}' already present – skipping.")
+
+    # ════════════════════════════════════════════════════════════════════
+    # Future blocks can be added here in the same pattern.
     # ════════════════════════════════════════════════════════════════════
 
     # ── save ──────────────────────────────────────────────────────────────

@@ -1,0 +1,18 @@
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrllll}
+\toprule
+ & MR & MED & MAD & CI & $\gamma$ & Magnitude \\
+\midrule
+Rules (LLM) & 6.432 & 0.511 & 0.076 & [0.431, 0.929] & 0.000 & negligible \\
+NLI (mDeBERTa) & 6.091 & 0.689 & 0.115 & [0.457, 0.901] & -1.230 & large \\
+Rules (IDF) & 4.977 & 0.874 & 0.067 & [0.707, 0.975] & -3.400 & large \\
+ME5 (Sim) & 4.136 & 0.921 & 0.056 & [0.833, 0.995] & -4.128 & large \\
+ME5 (SVM) & 2.841 & 0.984 & 0.007 & [0.953, 0.994] & -5.869 & large \\
+FT-ME5 (SVM) & 1.773 & 0.989 & 0.006 & [0.964, 0.997] & -5.939 & large \\
+FT-ME5 (Sim) & 1.750 & 0.990 & 0.007 & [0.949, 0.998] & -5.949 & large \\
+\bottomrule
+\end{tabular}
+\caption{Summary of populations}
+\label{tbl:stat_results}
+\end{table}
