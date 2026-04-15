@@ -1,0 +1,6 @@
+Given an organization name, decide which of the following classes it belongs to: [{class_list}] or none.
+An organization can belong to multiple classes or none.
+Here are examples from different countries:
+{few_shot_block}
+Respond with ONLY a JSON object like: {{{example_pairs}}}
+using 1 for yes and 0 for no, for each class in [{class_list}]. Nothing else.

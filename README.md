@@ -3,77 +3,66 @@
 ![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 
-This repository contains the official implementation of the comparative study: **"Linguistic Patterns in European Public Organization Names"**. It addresses the challenge of classifying public sector organizations across multiple European languages using *only* their official names, under low-context and low-resource assumptions.
+This repository contains the official implementation of the comparative study: **"Linguistic Patterns in European Public Organization Names"**. It addresses the challenge of classifying public sector organizations across multiple European languages using solely their official names, operating under strict low-context and low-resource constraints.
 
 ## Abstract
 
-This work addresses the challenge of classifying public sector organizations across multiple European languages using only their official names, a critical step for entity disambiguation in knowledge graph population. We employ ontology-based knowledge extraction to evaluate three Natural Language Processing approaches: **rule-based keyword extraction**, **zero-shot Natural Language Inference**, and **embedding-based semantic similarity** — under low-context, low-resource assumptions. Large Language Models are integrated across all three techniques.
+This work evaluates computational approaches for semantic classification of European public institutions strictly from name strings. Such classification is a foundational task for entity disambiguation, knowledge graph population, and metadata harmonization (Section 1.1: Problem Definition). Employing structured knowledge extraction from Wikidata, the study assesses three Natural Language Processing paradigms: rule-based keyword extraction, zero-shot Natural Language Inference (NLI), and embedding-based semantic similarity. The methodology systematically tests multilingual preprocessing, varying supervision regimes, classification structures, and representation learning techniques. We conduct a comprehensive empirical evaluation spanning healthcare, administration, and education domains across 24 European Union countries and 29 languages.
 
-Our methodology systematically evaluates multilingual preprocessing, various state-of-the-art models, different supervision regimes, classification structures, and parameter optimization. We conduct a detailed evaluation across three specific domains (healthcare, administration, education) spanning all European Union countries, analyzing performance in relation to lexical structure and class balance.
+## Methodology (Section 3)
 
-**Key Findings:**
-- ⚡ **Rule-based methods (TF-IDF keyword selection)** are surprisingly effective in multilingual scenarios when limited training data is available.
-- 🎯 **Natural Language Inference (NLI) models** offer competitive zero-shot performance but exhibit vulnerabilities to unbalanced class distributions.
-- 🌐 **Embedding-based semantic similarity methods** provide the most consistent generalization across languages, showcasing evidence of class coherence in vector space.
+The computational architecture is structured into three progressive methodological families to handle the brevity and multilingual ambiguity of administrative records (Section 3.2: Classification Experiments Design):
 
-This work highlights the feasibility of ontology-guided model training from short texts, offering valid approaches for entity disambiguation in formal knowledge representation systems.
+1. **Rule-Based Heuristics** (Section 4.1): Serving as a highly interpretable baseline, this approach utilizes tokenization and algorithmic keyword selection (e.g., TF-IDF and frequency counters). It relies on deterministic regular expressions to capture consistent institutional markers and domain-specific lexicon present in national naming conventions.
+2. **Zero-Shot Natural Language Inference (NLI)** (Section 4.2): This method leverages multilingual transformer models (e.g., XLM-RoBERTa, mDeBERTa) by formulating taxonomic classes as entailment hypotheses. It enables categorization without prior labeled instances, relying entirely on the native cross-lingual generalization capabilities of pre-trained encoders.
+3. **Embedding-Based Classifiers** (Section 4.3): To overcome the limitations of strictly lexical matches, this strategy maps name strings to dense, high-dimensional vector representations using models such as Multilingual-E5, Mistral, and Qwen. Static embeddings are evaluated using nearest-neighbor similarity, and further finetuned via supervised contrastive loss before training bounded linear classifiers (Logistic Regression and Support Vector Machines).
 
----
+## Evaluation and Domains (Section 3.1)
 
-## 🏗️ Repository Structure
+The evaluation operates on semantically constrained ground truth datasets constructed via query extraction from Wikidata, targeting functional public utility classes (Section 3.1: Ontology-Guided Data Extraction). The experiments are designed to address differing classification topologies:
 
-The project is structured modularly for reproducibility and ease of use:
+- **Medical Domain**: Tests a nested hierarchical structure to differentiate broad healthcare facilities from specialized entities such as university hospitals.
+- **Administrative Domain**: Employs a binary classification model identifying local governments as the foundational tier of regional administration.
+- **Educational Domain**: Addresses overlapping organizational responsibilities with multi-label classification to resolve facilities acting concurrently as primary and secondary schools.
 
-- **`orgpackage/`**: Core library for the project. Includes modules for:
-  - Data ingestion, processing, and sampling (`dataprocesser.py`).
-  - Rule-based keyword extraction and classification (`ruleclassifier.py`).
-  - Embeddings generation and orchestration (`clusterembedder.py`, `finetuner.py`).
-  - Evaluation and permutation testing (`evaluator.py`, `tester.py`).
-  - Plotting and metric visualization (`plotter.py`).
-- **`scripts/`**: Executable scripts for running different experiment groups.
-  - Experiment execution: `run_nli_tests.py`, `run_finetuned_experiments.py`, `ollamaexps.py`.
-  - Statistical testing: `run_embedding_permutation_analysis.py`, `build_cd_diagram_data.py`.
-  - Aggregation tools: `build_correctness_tables.py`, `report_mean_f1.py`.
-- **`data/`**: Datasets and configuration files required for the experiments.
-- **`notebooks/`**: Jupyter notebooks for exploratory data analysis, plotting, and inspection of results.
-- **`prompts/`**: LLM prompts used for data augmentation, extraction, or zero-shot classification variations.
-- **`fasttext_models/`, `keywords/`, `results/`**: Model artifacts, keyword banks, outputs, and generated CSV/JSON results.
+## Key Findings (Section 4)
 
-## ⚙️ Installation
+- **Lexical Regularities** (Section 4.1: Rule-based Approach): Lightweight rule-based methods (specifically optimized TF-IDF selection) demonstrate substantial performance and computational efficiency. They effectively capture the descriptive and highly standardized naming conventions utilized across European public organizations.
+- **Challenges in Zero-Shot NLI** (Section 4.2: Natural Language Inference): While zero-shot architectures generalize reasonably without supervision, their accuracy drastically deteriorates under class imbalance and nested classification structures, struggling to resolve fine-grained threshold distinctions.
+- **Semantic Vector Spaces** (Section 4.3: Embedding-based Classification): Embedding methods coupled with Support Vector Machine heads establish the highest predictive performance. Utilizing supervised contrastive fine-tuning drastically enhances class separability (Fisher's Discriminant Ratio) within the latent space, mitigating the intrinsic geometric anisotropy typical of pre-trained models.
 
-To set up the project locally, ensure you have Python 3.9+ installed and run the following:
+## Repository Structure
+
+The project is modularly structured to guarantee reproducibility across the experimental evaluation phases:
+
+- `orgpackage/`: Core modular library containing data ingestion pipelines (`dataprocesser.py`), classifier modules (`ruleclassifier.py`, `finetuner.py`, `clusterembedder.py`), and statistical testing logic.
+- `scripts/`: Executable entry points for the experiment families (NLI, embedding generation, permutation testing, and metric aggregations).
+- `data/`: Extracted datasets and model configuration files.
+- `notebooks/`: Jupyter notebooks dedicated to exploratory lexical data analysis and metric visualization.
+- `prompts/`: Specialized prompts for few-shot generative classification experiments.
+
+## Data and Models
+
+- **Dataset Embeddings:** The generated dataset embeddings utilized across the classification experiments are publicly hosted and available on Zenodo: [https://doi.org/10.5281/zenodo.15312407](https://doi.org/10.5281/zenodo.15312407).
+- **Trained Models:** The trained classifier artifacts (exported as `.pkl` files) are available directly within this GitHub repository.
+
+## Installation and Usage
+
+To initialize the project environment, require Python 3.9+ and execute the following:
 
 ```bash
-# Clone the repository
 git clone https://github.com/alvarodelser/OrgNamesNLP.git
 cd OrgNamesNLP
-
-# Create a virtual environment (optional but recommended)
 python -m venv .venv
-source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
-
-# Install required dependencies
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> **Note:** The `transformers` and `sentence-transformers` libraries require PyTorch. Ensure that you have a PyTorch version compatible with your hardware (CUDA/MPS/CPU) for optimal inference performance. 
+Experiments are self-contained through Python scripts or notebooks leveraging the `orgpackage` modules. Intermediate metrics, experimental variations, and aggregated F1 scores will automatically persist to the `results/` directory structures for downstream statistical analyses.
 
-## 🚀 Usage
+## License and Citation
 
-Experiments are built to be self-contained and run via the scripts or notebooks using orgpackage modules and functions. Resulting experiments are stored in a table results/experiments.csv and metrics, accuracy measures, and F1 scores will be automatically stored in the `results/` folder, which can later be aggregated or visualized.
-
-## Evaluation & Domains
-
-The evaluation scales comprehensively over **all EU member countries**, operating natively on the official organization names across three principal semantic domains:
-1. 🏥 **Healthcare:** Hospitals, clinics, medical boards.
-2. 🏛️ **Administration:** Ministries, local councils, federal registries.
-3. 🎓 **Education:** Universities, research institutes, early education centers.
-
-Analysis extensively reviews whether short-text contextualization relies more significantly on common linguistic roots across lexical families or on language-specific keyword overlap.
-
-## License & Citation
-
-If you use this repository or our findings in your own research or project, please cite the associated paper:
+If you utilize this methodology or implementation, please cite the underlying academic paper:
 
 ```bibtex
 @article{delser_orgnamesnlp,
@@ -84,5 +73,3 @@ If you use this repository or our findings in your own research or project, plea
   url={https://github.com/alvarodelser/OrgNamesNLP}
 }
 ```
-
-*(Keywords: Ontology Extraction, Natural Language Processing, Multilingual, Low-Context, Low-Resource, Entity Disambiguation)*

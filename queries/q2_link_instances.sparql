@@ -1,0 +1,12 @@
+SELECT ?item (GROUP_CONCAT(DISTINCT ?name; SEPARATOR=", ") AS ?names) 
+                  (GROUP_CONCAT(DISTINCT ?class; SEPARATOR=", ") AS ?class_ids) 
+                  (GROUP_CONCAT(DISTINCT ?classLabel; SEPARATOR=", ") AS ?classes) 
+WHERE {
+      VALUES ?item { {instances_str} }
+      ?item wdt:P31 ?class;
+              rdfs:label ?name.
+      FILTER(LANG(?name) IN ({languages_str}))
+      ?class rdfs:label ?classLabel.
+      FILTER(LANG(?classLabel) = "en")
+}
+GROUP BY ?item

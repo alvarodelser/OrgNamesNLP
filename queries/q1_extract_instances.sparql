@@ -1,0 +1,5 @@
+SELECT DISTINCT * WHERE {
+      ?item wdt:P31/wdt:P279* wd:{class_id};
+              wdt:P17 wd:{country_id};
+}
+LIMIT 100000
